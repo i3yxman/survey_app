@@ -9,27 +9,15 @@ import 'package:video_player/video_player.dart'; // 视频播放
 import 'package:image_gallery_saver/image_gallery_saver.dart'; // 保存到相册
 import 'dart:io'; // 用于本地文件
 import 'package:path_provider/path_provider.dart'; // 用于获取临时目录
+import 'config/env.dart';
 
-/// =====================
-/// 配置区：后端地址
-/// =====================
-///
-// Web / Mac 本机调试时用：
-const String baseUrlLocalhost = 'http://127.0.0.1:8000';
-
-// Android 模拟器用（Android 模拟器访问宿主机要用 10.0.2.2）
-const String baseUrlAndroidEmu = 'http://10.0.2.2:8000';
-
-// 真机（iOS / Android）用：把 <YOUR_IP> 换成你刚才查到的局域网 IP
-const String baseUrlLan = 'http://192.168.3.29:8000';
-
-// // 现在先指定一个实际使用的 baseUrl，比如先用 Android 模拟器：
-// const String baseUrl = baseUrlAndroidEmu;
-
-// iOS 模拟器 / Mac 上跑：后端在本机
-const String baseUrl = baseUrlLan;
+/// 统一从 Env 里取 baseUrl，保持原来的变量名不变
+String get baseUrl => Env.baseUrl;
 
 void main() {
+  // 启动时打印一下当前环境和后端地址
+  debugPrint('==== APP_ENV=${Env.env} baseUrl=${Env.baseUrl} ====');
+
   runApp(const MyApp());
 }
 
@@ -648,7 +636,7 @@ class MediaFileDto {
   factory MediaFileDto.fromJson(Map<String, dynamic> json) {
     return MediaFileDto(
       id: json['id'] as int,
-      fileUrl: json['file_url'] as String? ?? '',
+      fileUrl: (json['file_url'] ?? '') as String,
       mediaType: json['media_type'] as String? ?? '',
     );
   }
@@ -1478,12 +1466,16 @@ class _QuestionnairePageState extends State<QuestionnairePage> {
   /// 1）相对路径：/media/xx -> 拼到 baseUrl 后面
   /// 2）host 是 127.0.0.1 / localhost：替换成当前 baseUrl 的 host + 端口（比如 10.0.2.2:8000）
   String _normalizeFileUrl(String rawUrl) {
-    if (rawUrl.isEmpty) return rawUrl;
+    if (rawUrl.isEmpty) {
+      return '';  // 不要去 Uri.parse
+    }
 
-    // 先解析当前 baseUrl，方便拿到 host / port
+    if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
+      return rawUrl;
+    }
+
     final baseUri = Uri.parse(baseUrl);
 
-    // 1）相对路径：/media/xxx
     if (!rawUrl.startsWith('http')) {
       if (rawUrl.startsWith('/')) {
         return '${baseUri.scheme}://${baseUri.host}:${baseUri.port}$rawUrl';
@@ -1492,7 +1484,6 @@ class _QuestionnairePageState extends State<QuestionnairePage> {
       }
     }
 
-    // 2）绝对路径，但 host 是 127.0.0.1 / localhost，需要替换成 baseUrl 对应的 host
     final uri = Uri.parse(rawUrl);
     if (uri.host == '127.0.0.1' || uri.host == 'localhost') {
       final fixed = uri.replace(
@@ -1503,7 +1494,6 @@ class _QuestionnairePageState extends State<QuestionnairePage> {
       return fixed.toString();
     }
 
-    // 其他情况直接用原来的
     return rawUrl;
   }
 
@@ -1572,32 +1562,33 @@ class _QuestionnairePageState extends State<QuestionnairePage> {
             return ListTile(
               contentPadding: EdgeInsets.zero,
               leading: isImage
-                  ? GestureDetector(
-                      onTap: () {
-                        // 👉 点击缩略图：App 内全屏图片预览 + 左右滑
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => ImagePreviewPage(
-                              imageUrls: imageUrls,
-                              initialIndex: initialIndex,
+                  ? (fixedUrl.isEmpty
+                      ? const Icon(Icons.image_not_supported, size: 28)
+                      : GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ImagePreviewPage(
+                                  imageUrls: imageUrls,
+                                  initialIndex: initialIndex,
+                                ),
+                              ),
+                            );
+                          },
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: Image.network(
+                              fixedUrl,
+                              width: 56,
+                              height: 56,
+                              fit: BoxFit.cover,
                             ),
                           ),
-                        );
-                      },
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: Image.network(
-                          fixedUrl,
-                          width: 56,
-                          height: 56,
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                    )
+                        ))
                   : GestureDetector(
                       onTap: () {
-                        // 👉 点击视频图标：App 内全屏视频播放
+                        if (fixedUrl.isEmpty) return;
                         Navigator.push(
                           context,
                           MaterialPageRoute(
