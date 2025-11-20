@@ -10,6 +10,9 @@ import 'package:image_gallery_saver/image_gallery_saver.dart'; // 保存到相�
 import 'dart:io'; // 用于本地文件
 import 'package:path_provider/path_provider.dart'; // 用于获取临时目录
 import 'config/env.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:maps_launcher/maps_launcher.dart';
+import 'package:flutter/services.dart';
 
 /// 统一从 Env 里取 baseUrl，保持原来的变量名不变
 String get baseUrl => Env.baseUrl;
@@ -406,6 +409,15 @@ class Assignment {
   final String? deadline;
   final String createdAt;
 
+  // ⭐ 新增：门店相关字段（都可能为 null）
+  final int? storeId;
+  final String? storeCode;
+  final String? storeName;
+  final String? storeAddress;
+  final String? storeCity;
+  final double? storeLatitude;
+  final double? storeLongitude;
+
   Assignment({
     required this.id,
     required this.clientName,
@@ -416,6 +428,13 @@ class Assignment {
     required this.status,
     required this.createdAt,
     this.deadline,
+    this.storeId,
+    this.storeCode,
+    this.storeName,
+    this.storeAddress,
+    this.storeCity,
+    this.storeLatitude,
+    this.storeLongitude,
   });
 
   factory Assignment.fromJson(Map<String, dynamic> json) {
@@ -429,6 +448,15 @@ class Assignment {
       status: json['status'] as String? ?? '',
       deadline: json['deadline'] as String?,
       createdAt: json['created_at'] as String? ?? '',
+
+      // ⭐ 对应后端返回的字段
+      storeId: json['store_id'] as int?,
+      storeCode: json['store_code'] as String?,
+      storeName: json['store_name'] as String?,
+      storeAddress: json['store_address'] as String?,
+      storeCity: json['store_city'] as String?,
+      storeLatitude: (json['store_latitude'] as num?)?.toDouble(),
+      storeLongitude: (json['store_longitude'] as num?)?.toDouble(),
     );
   }
 }
@@ -864,6 +892,9 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
   late final ApiService _apiService;
   late Future<List<Assignment>> _futureAssignments;
 
+  // ⭐ 新增：当前评估员的位置
+  Position? _currentPosition;
+
   @override
   void initState() {
     super.initState();
@@ -872,6 +903,43 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
       password: widget.password,
     );
     _futureAssignments = _apiService.getMyAssignments();
+    _initLocation();   // ⭐ 获取位置
+  }
+
+  Future<void> _initLocation() async {
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        // 这里先不弹窗，简单提示即可
+        debugPrint('定位服务未开启');
+        return;
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          debugPrint('定位权限被拒绝');
+          return;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        debugPrint('定位权限被永久拒绝');
+        return;
+      }
+
+      final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _currentPosition = pos;
+      });
+    } catch (e) {
+      debugPrint('获取位置失败: $e');
+    }
   }
 
   Future<void> _reload() async {
@@ -951,23 +1019,87 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
               final a = assignments[index];
               final statusText = statusLabel(a.status);
 
+              // ⭐ 计算距离（如果当前有坐标 + 门店有坐标）
+              double? distanceMeters;
+              if (_currentPosition != null &&
+                  a.storeLatitude != null &&
+                  a.storeLongitude != null) {
+                distanceMeters = Geolocator.distanceBetween(
+                  _currentPosition!.latitude,
+                  _currentPosition!.longitude,
+                  a.storeLatitude!,
+                  a.storeLongitude!,
+                );
+              }
+
+              String distanceText = '';
+              if (distanceMeters != null) {
+                if (distanceMeters >= 1000) {
+                  distanceText = '距离：${(distanceMeters / 1000).toStringAsFixed(1)} km';
+                } else {
+                  distanceText = '距离：${distanceMeters.toStringAsFixed(0)} m';
+                }
+              }
+
+              // ⭐ 标题：优先显示门店名称
+              final title = a.storeName != null && a.storeName!.isNotEmpty
+                  ? '${a.clientName} - ${a.projectName} - ${a.storeName}'
+                  : '${a.clientName} - ${a.projectName}';
+
+              final storeLine = a.storeAddress != null && a.storeAddress!.isNotEmpty
+                  ? '门店：${a.storeName ?? ''}（${a.storeAddress}）'
+                  : (a.storeName != null ? '门店：${a.storeName}' : null);
+
               return Card(
-                margin:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 child: ListTile(
-                  title: Text('${a.clientName} - ${a.projectName}'),
-                  subtitle: Text(
-                    '${a.questionnaireTitle}\n状态：$statusText\n创建时间：${a.createdAt}',
-                  ),
+                  title: Text(title),
+                  subtitle: Text([
+                    a.questionnaireTitle,
+                    if (storeLine != null) storeLine,
+                    if (distanceText.isNotEmpty) distanceText,
+                    '状态：$statusText',
+                    '创建时间：${a.createdAt}',
+                  ].join('\n')),
                   isThreeLine: true,
+
+                  // ⭐ 右侧：复制地址 + 导航按钮（横向排，避免高度溢出）
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (a.storeAddress != null && a.storeAddress!.isNotEmpty)
+                        IconButton(
+                          icon: const Icon(Icons.copy, size: 20),
+                          tooltip: '复制地址',
+                          onPressed: () {
+                            final fullAddr = '${a.storeCity ?? ''}${a.storeAddress ?? ''}';
+                            Clipboard.setData(ClipboardData(text: fullAddr));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('地址已复制')),
+                            );
+                          },
+                        ),
+                      if (a.storeLatitude != null && a.storeLongitude != null)
+                        IconButton(
+                          icon: const Icon(Icons.navigation, size: 20),
+                          tooltip: '导航到门店',
+                          onPressed: () {
+                            MapsLauncher.launchCoordinates(
+                              a.storeLatitude!,
+                              a.storeLongitude!,
+                              a.storeName ?? '目标门店',
+                            );
+                          },
+                        ),
+                    ],
+                  ),
+
                   onTap: () async {
-                    // 已提交 / 已审核 不允许再进入编辑
                     if (a.status == 'submitted' || a.status == 'reviewed') {
                       await _showReadonlyDialog(a.status);
                       return;
                     }
 
-                    // 可编辑状态：pending / draft 等
                     final needRefresh = await Navigator.of(context).push<bool>(
                       MaterialPageRoute(
                         builder: (_) => QuestionnairePage(
