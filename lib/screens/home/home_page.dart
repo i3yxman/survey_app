@@ -16,7 +16,6 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   int _currentIndex = 0;
 
-  // 三个 Tab 对应的页面
   late final List<Widget> _pages;
 
   @override
@@ -31,6 +30,8 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
       body: IndexedStack(
         index: _currentIndex,
@@ -45,15 +46,18 @@ class _HomePageState extends State<HomePage> {
         },
         items: const [
           BottomNavigationBarItem(
-            icon: Icon(Icons.assignment),
+            icon: Icon(Icons.assignment_outlined),
+            activeIcon: Icon(Icons.assignment),
             label: '我的任务',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.store_mall_directory),
+            icon: Icon(Icons.store_mall_directory_outlined),
+            activeIcon: Icon(Icons.store_mall_directory),
             label: '任务大厅',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.person),
+            icon: Icon(Icons.person_outline),
+            activeIcon: Icon(Icons.person),
             label: '账号',
           ),
         ],

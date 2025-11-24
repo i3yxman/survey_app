@@ -1,11 +1,18 @@
 // lib/screens/job_postings/job_postings_page.dart
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/api_models.dart';
 import '../../providers/job_postings_provider.dart';
+import '../../providers/location_provider.dart'; // ⭐ 新增
 import '../../services/api_service.dart';
+import '../../widgets/info_chip.dart';
+import '../../utils/location_utils.dart';
 
 class JobPostingsPage extends StatefulWidget {
   const JobPostingsPage({super.key});
@@ -18,17 +25,51 @@ class _JobPostingsPageState extends State<JobPostingsPage> {
   @override
   void initState() {
     super.initState();
-    // 首帧后加载任务大厅
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<JobPostingsProvider>().loadJobPostings();
+      context.read<LocationProvider>().ensureLocation(); // ⭐ 全局定位
     });
   }
 
   Future<void> _refresh() async {
     await context.read<JobPostingsProvider>().loadJobPostings();
+    await context.read<LocationProvider>().ensureLocation();
   }
 
-  /// 申请任务
+  /// 使用 LocationProvider + utils 统一计算距离
+  String? _formatDistance(
+    LocationProvider loc,
+    double? storeLat,
+    double? storeLng,
+  ) {
+    return formatStoreDistance(loc.position, storeLat, storeLng);
+  }
+
+  Future<void> _launchNavigation({
+    required double lat,
+    required double lng,
+    String? label,
+  }) async {
+    final encodedLabel = Uri.encodeComponent(label ?? '目的地');
+    Uri uri;
+
+    if (Platform.isIOS) {
+      uri =
+          Uri.parse('http://maps.apple.com/?daddr=$lat,$lng&q=$encodedLabel');
+    } else {
+      uri = Uri.parse(
+        'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng',
+      );
+    }
+
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('无法打开地图应用')),
+      );
+    }
+  }
+
   Future<void> _handleApply(JobPosting p) async {
     final provider = context.read<JobPostingsProvider>();
 
@@ -53,11 +94,9 @@ class _JobPostingsPageState extends State<JobPostingsPage> {
     }
   }
 
-  /// 撤销申请
   Future<void> _handleCancelApply(JobPosting p) async {
     final provider = context.read<JobPostingsProvider>();
 
-    // 先确认一下
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) {
@@ -101,55 +140,49 @@ class _JobPostingsPageState extends State<JobPostingsPage> {
     }
   }
 
-  /// 根据任务状态决定显示什么按钮/文案
   Widget _buildTrailing(JobPosting p) {
     final isPostingOpen = p.status == 'open';
     final appStatus = p.applicationStatus;
+    final theme = Theme.of(context);
 
-    // 统一按钮区域宽度，保证“申请任务”和“撤销申请”视觉上一致
     const double trailingWidth = 120;
 
-    // 非 open 的任务：统一显示“已关闭”
     if (!isPostingOpen) {
-      return const SizedBox(
+      return SizedBox(
         width: trailingWidth,
         child: Center(
           child: Text(
             '已关闭',
-            style: TextStyle(
+            style: theme.textTheme.bodySmall?.copyWith(
               color: Colors.grey,
-              fontSize: 12,
             ),
           ),
         ),
       );
     }
 
-    // 已申请：两行（已申请 + 撤销申请），整体垂直居中
     if (appStatus == 'applied') {
       return SizedBox(
         width: trailingWidth,
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            const Text(
+            Text(
               '已申请',
-              style: TextStyle(
-                color: Colors.green,
-                fontSize: 12,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.secondary,
+                fontWeight: FontWeight.w500,
               ),
             ),
-            const SizedBox(height: 4),
-            ElevatedButton(
+            const SizedBox(height: 6),
+            OutlinedButton(
               onPressed: () => _handleCancelApply(p),
-              style: ElevatedButton.styleFrom(
+              style: OutlinedButton.styleFrom(
                 minimumSize: const Size(0, 32),
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                textStyle: const TextStyle(fontSize: 14),
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                side: BorderSide(color: theme.colorScheme.error),
+                foregroundColor: theme.colorScheme.error,
               ),
               child: const Text('撤销申请'),
             ),
@@ -158,7 +191,6 @@ class _JobPostingsPageState extends State<JobPostingsPage> {
       );
     }
 
-    // 可申请：单行按钮，整体垂直居中
     return SizedBox(
       width: trailingWidth,
       child: Center(
@@ -166,12 +198,8 @@ class _JobPostingsPageState extends State<JobPostingsPage> {
           onPressed: () => _handleApply(p),
           style: ElevatedButton.styleFrom(
             minimumSize: const Size(0, 32),
-            padding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 4,
-            ),
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            textStyle: const TextStyle(fontSize: 14),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
           ),
           child: const Text('申请任务'),
         ),
@@ -181,8 +209,8 @@ class _JobPostingsPageState extends State<JobPostingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<JobPostingsProvider>(
-      builder: (context, provider, _) {
+    return Consumer2<JobPostingsProvider, LocationProvider>(
+      builder: (context, provider, loc, _) {
         if (provider.isLoading && provider.jobPostings.isEmpty) {
           return const Center(child: CircularProgressIndicator());
         }
@@ -224,6 +252,8 @@ class _JobPostingsPageState extends State<JobPostingsPage> {
           );
         }
 
+        final theme = Theme.of(context);
+
         return RefreshIndicator(
           onRefresh: _refresh,
           child: ListView.builder(
@@ -240,14 +270,37 @@ class _JobPostingsPageState extends State<JobPostingsPage> {
                       ? '门店：${p.storeName ?? ''}（${p.storeAddress}）'
                       : (p.storeName != null ? '门店：${p.storeName}' : null);
 
+              final distanceText =
+                  _formatDistance(loc, p.storeLatitude, p.storeLongitude);
+
               return Card(
-                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                   child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center, // ⭐ 垂直居中
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      // 左边：标题 + 副标题
+                      // 左侧竖条
+                      Container(
+                        width: 4,
+                        height: 52,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(999),
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              theme.colorScheme.primary,
+                              theme.colorScheme.secondary,
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+
+                      // 中间内容
                       Expanded(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
@@ -255,19 +308,54 @@ class _JobPostingsPageState extends State<JobPostingsPage> {
                           children: [
                             Text(
                               title,
-                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                              style: theme.textTheme.titleMedium,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              [
-                                p.questionnaireTitle,
-                                if (p.description.isNotEmpty) '说明：${p.description}',
-                                if (storeLine != null) storeLine,
-                                '发布时间：${p.createdAt}',
-                              ].join('\n'),
-                              style: Theme.of(context).textTheme.bodySmall,
+                              p.questionnaireTitle,
+                              style: theme.textTheme.bodyMedium,
+                            ),
+                            const SizedBox(height: 4),
+                            if (p.description.isNotEmpty)
+                              Text(
+                                p.description,
+                                style: theme.textTheme.bodySmall,
+                              ),
+                            const SizedBox(height: 6),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              children: [
+                                if (storeLine != null)
+                                  InfoChip(
+                                    icon: Icons.storefront_outlined,
+                                    text: storeLine,
+                                  ),
+                                InfoChip(
+                                  icon: Icons.schedule_outlined,
+                                  text: '发布时间：${p.createdAt}',
+                                ),
+                                if (distanceText != null)
+                                  InfoChip(
+                                    icon: Icons.place_outlined,
+                                    text: '距离门店 $distanceText',
+                                  ),
+                                if (p.storeLatitude != null &&
+                                    p.storeLongitude != null)
+                                  InfoChip(
+                                    icon: Icons.navigation_outlined,
+                                    text: '导航',
+                                    onTap: () {
+                                      _launchNavigation(
+                                        lat: p.storeLatitude!,
+                                        lng: p.storeLongitude!,
+                                        label: p.storeName ?? p.clientName,
+                                      );
+                                    },
+                                  ),
+                              ],
                             ),
                           ],
                         ),
@@ -275,7 +363,6 @@ class _JobPostingsPageState extends State<JobPostingsPage> {
 
                       const SizedBox(width: 12),
 
-                      // 右边：申请 / 已申请 + 撤销
                       _buildTrailing(p),
                     ],
                   ),

@@ -1,78 +1,231 @@
 // lib/theme/app_theme.dart
+
 import 'package:flutter/material.dart';
 
 class AppTheme {
-  static const _primaryColor = Color(0xFF2563EB); // 高级一点的蓝
-  static const _accentColor  = Color(0xFF22C55E); // 绿色点缀
-  static const _errorColor   = Color(0xFFEF4444);
+  // 系统蓝
+  static const _primaryBlue = Color(0xFF007AFF);
+  // iOS 浅灰背景
+  static const _backgroundLight = Color(0xFFF2F2F7);
 
-  static ThemeData light() {
+  static ThemeData get lightTheme {
     final base = ThemeData(
       useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: _primaryColor,
-        primary: _primaryColor,
-        secondary: _accentColor,
-        error: _errorColor,
-        brightness: Brightness.light,
-      ),
+      brightness: Brightness.light,
+    );
+
+    final scheme = ColorScheme.fromSeed(
+      seedColor: _primaryBlue,
+      brightness: Brightness.light,
+      primary: _primaryBlue,
+      secondary: const Color(0xFF5856D6),
+      background: _backgroundLight,
+      surface: Colors.white,
     );
 
     return base.copyWith(
-      scaffoldBackgroundColor: const Color(0xFFF3F4F6), // 更浅一点的灰白
+      colorScheme: scheme,
+      scaffoldBackgroundColor: _backgroundLight,
 
-      cardTheme: const CardThemeData(
-        color: Colors.white,
-        elevation: 2,
-        margin: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(16)),
+      // 顶部导航条：白底、居中标题、17 号字
+      appBarTheme: AppBarTheme(
+        backgroundColor: _backgroundLight,
+        foregroundColor: Colors.black,
+        elevation: 0,
+        centerTitle: true,
+        titleTextStyle: base.textTheme.titleMedium?.copyWith(
+          fontWeight: FontWeight.w600,
+          fontSize: 17,
+          letterSpacing: -0.2,
         ),
+      ),
+
+      // 卡片：大圆角 + 无阴影，类似 iOS 列表卡片
+      cardTheme: CardThemeData(
+        color: scheme.surface,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      ),
+
+      // Filled 主按钮：系统蓝 + 大圆角
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: _primaryBlue,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          textStyle: base.textTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0,
+          ),
+        ),
+      ),
+
+      // Outlined 按钮
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          side: BorderSide(color: scheme.outlineVariant),
+          textStyle: base.textTheme.labelLarge,
+        ),
+      ),
+
+      // Text 按钮：系统蓝文本
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: _primaryBlue,
+          textStyle: base.textTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ),
+
+      // 输入框：半透明浅灰填充 + 14 圆角，和你现在登录页一致
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: scheme.surfaceVariant.withOpacity(0.6),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide.none,
+        ),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        labelStyle: base.textTheme.bodyMedium?.copyWith(
+          color: Colors.grey[700],
+        ),
+      ),
+
+      // 底部导航：浅灰底，选中蓝色，文字小一号
+      bottomNavigationBarTheme: BottomNavigationBarThemeData(
+        type: BottomNavigationBarType.fixed,
+        backgroundColor: _backgroundLight,
+        selectedItemColor: _primaryBlue,
+        unselectedItemColor: Colors.grey[500],
+        selectedLabelStyle: base.textTheme.labelSmall?.copyWith(
+          fontWeight: FontWeight.w600,
+        ),
+        unselectedLabelStyle: base.textTheme.labelSmall,
+        showUnselectedLabels: true,
+      ),
+
+      // Tab 样式（如果你后面用到）
+      tabBarTheme: TabBarThemeData(
+        labelColor: _primaryBlue,
+        unselectedLabelColor: Colors.grey[600],
+        indicatorColor: _primaryBlue,
+      ),
+
+      // 分割线更细一点
+      dividerTheme: const DividerThemeData(
+        space: 1,
+        thickness: 0.5,
+      ),
+    );
+  }
+
+  static ThemeData get darkTheme {
+    final base = ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.dark,
+    );
+
+    final scheme = ColorScheme.fromSeed(
+      seedColor: _primaryBlue,
+      brightness: Brightness.dark,
+      primary: _primaryBlue,
+      secondary: const Color(0xFF5E5CE6),
+      background: const Color(0xFF000000),
+      surface: const Color(0xFF1C1C1E), // iOS 深色卡片
+    );
+
+    return base.copyWith(
+      colorScheme: scheme,
+      scaffoldBackgroundColor: scheme.background,
+
+      appBarTheme: AppBarTheme(
+        backgroundColor: scheme.background,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        centerTitle: true,
+        titleTextStyle: base.textTheme.titleMedium?.copyWith(
+          fontWeight: FontWeight.w600,
+          fontSize: 17,
+          letterSpacing: -0.2,
+        ),
+      ),
+
+      cardTheme: CardThemeData(
+        color: scheme.surface,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       ),
 
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
+          backgroundColor: _primaryBlue,
+          foregroundColor: Colors.white,
           elevation: 0,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(999),
+            borderRadius: BorderRadius.circular(14),
           ),
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          textStyle: base.textTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
 
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(999),
+            borderRadius: BorderRadius.circular(14),
           ),
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          side: BorderSide(color: scheme.outlineVariant),
+          textStyle: base.textTheme.labelLarge,
         ),
       ),
 
-      textTheme: _buildTextTheme(base.textTheme),
-    );
-  }
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: _primaryBlue,
+        ),
+      ),
 
-  static TextTheme _buildTextTheme(TextTheme base) {
-    return base.copyWith(
-      titleMedium: base.titleMedium?.copyWith(
-        fontSize: 16,
-        fontWeight: FontWeight.w600,
-        letterSpacing: 0.1,
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: scheme.surfaceVariant.withOpacity(0.7),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide.none,
+        ),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       ),
-      bodyMedium: base.bodyMedium?.copyWith(
-        fontSize: 14,
-        height: 1.4,
+
+      bottomNavigationBarTheme: BottomNavigationBarThemeData(
+        type: BottomNavigationBarType.fixed,
+        backgroundColor: scheme.surface,
+        selectedItemColor: _primaryBlue,
+        unselectedItemColor: Colors.grey[500],
+        selectedLabelStyle: base.textTheme.labelSmall?.copyWith(
+          fontWeight: FontWeight.w600,
+        ),
+        unselectedLabelStyle: base.textTheme.labelSmall,
+        showUnselectedLabels: true,
       ),
-      bodySmall: base.bodySmall?.copyWith(
-        fontSize: 12,
-        color: Colors.grey[600],
-        height: 1.4,
-      ),
-      labelLarge: base.labelLarge?.copyWith(
-        fontSize: 14,
-        fontWeight: FontWeight.w500,
-        letterSpacing: 0.1,
+
+      dividerTheme: const DividerThemeData(
+        space: 1,
+        thickness: 0.5,
       ),
     );
   }

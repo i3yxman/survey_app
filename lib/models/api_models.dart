@@ -30,20 +30,17 @@ class LoginResult {
 /// 任务列表的模型
 class Assignment {
   final int id;
-
-  /// 对应后端的 job_posting 字段（可能为 null）
-  final int? jobPostingId;
-
-  final String clientName;
-  final int projectId;
-  final String projectName;
-  final int questionnaireId;
-  final String questionnaireTitle;
   final String status;
-  final String? deadline;
   final String createdAt;
 
-  // 门店相关字段（都可能为 null）
+  final int? jobPosting;
+  final int? project;
+  final String? projectName;
+  final int? questionnaire;
+  final String? questionnaireTitle;
+  final String? clientName;
+
+  final int? store;
   final int? storeId;
   final String? storeCode;
   final String? storeName;
@@ -54,15 +51,15 @@ class Assignment {
 
   Assignment({
     required this.id,
-    required this.clientName,
-    required this.projectId,
-    required this.projectName,
-    required this.questionnaireId,
-    required this.questionnaireTitle,
     required this.status,
     required this.createdAt,
-    this.jobPostingId,
-    this.deadline,
+    this.jobPosting,
+    this.project,
+    this.projectName,
+    this.questionnaire,
+    this.questionnaireTitle,
+    this.clientName,
+    this.store,
     this.storeId,
     this.storeCode,
     this.storeName,
@@ -73,25 +70,56 @@ class Assignment {
   });
 
   factory Assignment.fromJson(Map<String, dynamic> json) {
+    double? _toDouble(dynamic v) {
+      if (v == null) return null;
+      if (v is double) return v;
+      if (v is int) return v.toDouble();
+      return double.tryParse(v.toString());
+    }
+
     return Assignment(
       id: json['id'] as int,
-      jobPostingId: json['job_posting'] as int?,
-      clientName: json['client_name'] as String? ?? '',
-      projectId: json['project'] as int,
-      projectName: json['project_name'] as String? ?? '',
-      questionnaireId: json['questionnaire'] as int,
-      questionnaireTitle: json['questionnaire_title'] as String? ?? '',
-      status: json['status'] as String? ?? '',
-      deadline: json['deadline'] as String?,
-      createdAt: json['created_at'] as String? ?? '',
+      status: json['status'] as String,
+      createdAt: json['created_at']?.toString() ?? '',
+
+      jobPosting: json['job_posting'] as int?,
+      project: json['project'] as int?,
+      projectName: json['project_name']?.toString(),
+      questionnaire: json['questionnaire'] as int?,
+      questionnaireTitle: json['questionnaire_title']?.toString(),
+      clientName: json['client_name']?.toString(),
+
+      store: json['store'] as int?,
       storeId: json['store_id'] as int?,
-      storeCode: json['store_code'] as String?,
-      storeName: json['store_name'] as String?,
-      storeAddress: json['store_address'] as String?,
-      storeCity: json['store_city'] as String?,
-      storeLatitude: (json['store_latitude'] as num?)?.toDouble(),
-      storeLongitude: (json['store_longitude'] as num?)?.toDouble(),
+      storeCode: json['store_code']?.toString(),
+      storeName: json['store_name']?.toString(),
+      storeAddress: json['store_address']?.toString(),
+      storeCity: json['store_city']?.toString(),
+      storeLatitude: _toDouble(json['store_latitude']),
+      storeLongitude: _toDouble(json['store_longitude']),
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'status': status,
+      'created_at': createdAt,
+      'job_posting': jobPosting,
+      'project': project,
+      'project_name': projectName,
+      'questionnaire': questionnaire,
+      'questionnaire_title': questionnaireTitle,
+      'client_name': clientName,
+      'store': store,
+      'store_id': storeId,
+      'store_code': storeCode,
+      'store_name': storeName,
+      'store_address': storeAddress,
+      'store_city': storeCity,
+      'store_latitude': storeLatitude,
+      'store_longitude': storeLongitude,
+    };
   }
 }
 

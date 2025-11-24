@@ -1,23 +1,34 @@
 // lib/screens/assignments/my_assignments_page.dart
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/api_models.dart';
 import '../../providers/assignment_provider.dart';
+import '../../providers/location_provider.dart'; // ⭐ 新增
 import '../../services/api_service.dart';
+import '../../widgets/info_chip.dart';
+import '../../utils/location_utils.dart';
 
 /// 把后端的状态英文码映射成前端展示用的中文文案
 String statusLabel(String status) {
   switch (status) {
     case 'pending':
       return '未开始';
+    case 'in_progress':
+      return '进行中';
     case 'draft':
       return '草稿';
     case 'submitted':
       return '已提交';
     case 'reviewed':
       return '已审核';
+    case 'cancelled':
+      return '已取消';
     default:
       return status;
   }
@@ -34,27 +45,64 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> {
   @override
   void initState() {
     super.initState();
-    // 首帧后拉取一次列表
+    // 首帧后拉取任务 + 全局定位
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AssignmentProvider>().loadAssignments();
+      context.read<LocationProvider>().ensureLocation(); // ⭐ 全局定位
     });
   }
 
   Future<void> _refresh() async {
     await context.read<AssignmentProvider>().loadAssignments();
+    await context.read<LocationProvider>().ensureLocation();
+  }
+
+  /// 使用 LocationProvider + utils 统一计算距离
+  String? _formatDistance(
+    LocationProvider loc,
+    double? storeLat,
+    double? storeLng,
+  ) {
+    return formatStoreDistance(loc.position, storeLat, storeLng);
+  }
+
+  /// 导航：保持原来的 Apple Maps / Google Maps 逻辑
+  Future<void> _launchNavigation(Assignment a) async {
+    final lat = a.storeLatitude;
+    final lng = a.storeLongitude;
+    if (lat == null || lng == null) return;
+
+    final label = a.storeName ?? a.clientName ?? '目的地';
+    final encodedLabel = Uri.encodeComponent(label);
+    Uri uri;
+
+    if (Platform.isIOS) {
+      uri =
+          Uri.parse('http://maps.apple.com/?daddr=$lat,$lng&q=$encodedLabel');
+    } else {
+      uri = Uri.parse(
+        'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng',
+      );
+    }
+
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('无法打开地图应用')),
+      );
+    }
   }
 
   Future<void> _handleCancelAssignment(Assignment assignment) async {
     final provider = context.read<AssignmentProvider>();
 
     try {
-      // 第一步：confirm = false，拿预览
+      // 第一步：预览
       final preview = await provider.cancelAssignment(
         assignmentId: assignment.id,
         confirm: false,
       );
 
-      // 如果不需要确认，直接提示并刷新
       if (!preview.confirmRequired) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -64,7 +112,6 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> {
         return;
       }
 
-      // 需要确认：弹对话框
       if (!mounted) return;
       final confirmed = await showDialog<bool>(
         context: context,
@@ -106,7 +153,7 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> {
         return;
       }
 
-      // 第二步：confirm = true，真正取消
+      // 第二步：真正取消
       final result = await provider.cancelAssignment(
         assignmentId: assignment.id,
         confirm: true,
@@ -130,10 +177,126 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> {
     }
   }
 
+  // 主按钮文案：开始 / 继续 / 查看
+  String _primaryActionLabel(Assignment a) {
+    switch (a.status) {
+      case 'pending':
+        return '开始填写';
+      case 'in_progress':
+      case 'draft':
+        return '继续填写';
+      case 'submitted':
+      case 'reviewed':
+        return '查看填写';
+      case 'cancelled':
+        return '已取消';
+      default:
+        return '开始填写';
+    }
+  }
+
+  bool _primaryActionEnabled(Assignment a) {
+    return a.status != 'cancelled';
+  }
+
+  /// 右侧按钮区域：主操作（开始/继续/查看） + 取消任务
+  Widget _buildTrailing(Assignment a) {
+    const trailingWidth = 120.0;
+
+    final status = a.status;
+    final canCancel =
+        !(status == 'submitted' || status == 'reviewed' || status == 'cancelled');
+
+    final primaryLabel = _primaryActionLabel(a);
+    final primaryEnabled = _primaryActionEnabled(a);
+
+    return SizedBox(
+      width: trailingWidth,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: primaryEnabled
+                  ? () {
+                      Navigator.pushNamed(
+                        context,
+                        '/survey-fill',
+                        arguments: a,
+                      );
+                    }
+                  : null,
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size(0, 32),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              ),
+              child: Text(
+                primaryLabel,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          TextButton(
+            onPressed: canCancel ? () => _handleCancelAssignment(a) : null,
+            style: TextButton.styleFrom(
+              minimumSize: const Size(0, 32),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            ),
+            child: const Text('取消任务'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 底部信息：门店 / 创建时间 / 距离 / 导航
+  Widget _buildBottomMeta(
+    Assignment a,
+    LocationProvider loc,
+  ) {
+    final storeLine = a.storeAddress != null && a.storeAddress!.isNotEmpty
+        ? '门店：${a.storeName ?? ''}（${a.storeAddress}）'
+        : (a.storeName != null ? '门店：${a.storeName}' : null);
+
+    final distanceText =
+        _formatDistance(loc, a.storeLatitude, a.storeLongitude);
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 4,
+      children: [
+        if (storeLine != null)
+          InfoChip(
+            icon: Icons.storefront_outlined,
+            text: storeLine,
+          ),
+        InfoChip(
+          icon: Icons.schedule_outlined,
+          text: '创建时间：${a.createdAt}',
+        ),
+        if (distanceText != null)
+          InfoChip(
+            icon: Icons.place_outlined,
+            text: '距离门店 $distanceText',
+          ),
+        if (a.storeLatitude != null && a.storeLongitude != null)
+          InfoChip(
+            icon: Icons.navigation_outlined,
+            text: '导航',
+            onTap: () => _launchNavigation(a),
+          ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Consumer<AssignmentProvider>(
-      builder: (context, provider, _) {
+    return Consumer2<AssignmentProvider, LocationProvider>(
+      builder: (context, provider, loc, _) {
         if (provider.isLoading && provider.assignments.isEmpty) {
           return const Center(child: CircularProgressIndicator());
         }
@@ -175,6 +338,8 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> {
           );
         }
 
+        final theme = Theme.of(context);
+
         return RefreshIndicator(
           onRefresh: _refresh,
           child: ListView.builder(
@@ -187,30 +352,60 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> {
                   : '${a.clientName} - ${a.projectName}';
 
               return Card(
-                margin:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                child: ListTile(
-                  title: Text(title),
-                  subtitle: Text(
-                    [
-                      a.questionnaireTitle,
-                      '状态：${statusLabel(a.status)}',
-                      '创建时间：${a.createdAt}',
-                    ].join('\n'),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
                   ),
-                  isThreeLine: true,
-                  trailing: IconButton(
-                    icon: const Icon(Icons.cancel_outlined, size: 20),
-                    tooltip: '取消任务',
-                    onPressed: (a.status == 'submitted' ||
-                            a.status == 'reviewed')
-                        ? null
-                        : () => _handleCancelAssignment(a),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      // 左侧竖条
+                      Container(
+                        width: 4,
+                        height: 52,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(999),
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              theme.colorScheme.primary,
+                              theme.colorScheme.secondary,
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+
+                      // 中间信息
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              title,
+                              style: theme.textTheme.titleMedium,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              a.questionnaireTitle ?? '',
+                              style: theme.textTheme.bodyMedium,
+                            ),
+                            const SizedBox(height: 6),
+                            _buildBottomMeta(a, loc),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(width: 12),
+
+                      _buildTrailing(a),
+                    ],
                   ),
-                  onTap: () {
-                    // 这里先保留一个占位点击逻辑，你后面可以改成跳转详情页
-                    // Navigator.pushNamed(context, '/assignment-detail', arguments: a);
-                  },
                 ),
               );
             },
