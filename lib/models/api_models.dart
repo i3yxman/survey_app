@@ -438,7 +438,7 @@ class SubmissionDto {
 class MediaFileDto {
   final int id;
   final String fileUrl;
-  final String mediaType;
+  final String mediaType; // 'image' or 'video'
 
   MediaFileDto({
     required this.id,
@@ -449,8 +449,8 @@ class MediaFileDto {
   factory MediaFileDto.fromJson(Map<String, dynamic> json) {
     return MediaFileDto(
       id: json['id'] as int,
-      fileUrl: (json['file_url'] ?? '') as String,
-      mediaType: json['media_type'] as String? ?? '',
+      fileUrl: (json['file_url'] as String?) ?? '',
+      mediaType: (json['media_type'] as String?) ?? '',
     );
   }
 }
@@ -462,7 +462,12 @@ class AnswerDraft {
   double? numberValue;
   List<int> selectedOptionIds;
   List<int> mediaFileIds;
+
+  /// 是否有媒体正在上传（用来显示 loading、禁止重复点）
   bool isUploadingMedia;
+
+  /// 最近一次上传的错误信息（为空代表没错 / 已清空）
+  String? mediaError;
 
   AnswerDraft({
     required this.questionId,
@@ -471,6 +476,7 @@ class AnswerDraft {
     List<int>? selectedOptionIds,
     List<int>? mediaFileIds,
     this.isUploadingMedia = false,
+    this.mediaError,
   })  : selectedOptionIds = selectedOptionIds ?? [],
         mediaFileIds = mediaFileIds ?? [];
 }

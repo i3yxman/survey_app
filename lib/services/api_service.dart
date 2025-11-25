@@ -225,6 +225,32 @@ class ApiService {
     return MediaFileDto.fromJson(jsonDecode(respBody));
   }
 
+
+  /// 批量获取媒体文件详情：根据 id 列表
+  Future<List<MediaFileDto>> fetchMediaFilesByIds(List<int> ids) async {
+    if (ids.isEmpty) return [];
+
+    final url = Uri.parse(
+      '${Env.apiBaseUrl}/api/assignments/media-files/?ids=${ids.join(",")}',
+    );
+
+    final resp = await _client.get(
+      url,
+      headers: {
+        'Authorization': _authBasic ?? '',
+      },
+    );
+
+    if (resp.statusCode != 200) {
+      throw ApiException('获取媒体信息失败: ${resp.statusCode} ${resp.body}');
+    }
+
+    final list = jsonDecode(resp.body) as List<dynamic>;
+    return list
+        .map((e) => MediaFileDto.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   /// -------------------------
   ///     取消任务（两阶段）
   /// -------------------------
@@ -269,5 +295,105 @@ class ApiService {
 
     final list = jsonDecode(resp.body) as List<dynamic>;
     return list.map((e) => SubmissionDto.fromJson(e)).toList();
+  }
+
+    /// 获取问卷详情（题目 + 选项 + 跳转逻辑）
+  Future<QuestionnaireDto> fetchQuestionnaireDetail(int questionnaireId) async {
+    final url = Uri.parse(
+      '${Env.apiBaseUrl}/api/survey/questionnaires/$questionnaireId/',
+    );
+
+    final resp = await _client.get(
+      url,
+      headers: {
+        'Authorization': _authBasic ?? '',
+      },
+    );
+
+    if (resp.statusCode != 200) {
+      throw ApiException('获取问卷失败: ${resp.statusCode}');
+    }
+
+    final data = jsonDecode(resp.body) as Map<String, dynamic>;
+    return QuestionnaireDto.fromJson(data);
+  }
+
+  /// 保存提交（草稿 / 提交）
+  ///
+  /// - submissionId 为空时：创建新提交（POST）
+  /// - submissionId 不为空：更新已有提交（PUT）
+  /// - status：'draft' 或 'submitted'
+  /// - answers：前端的 AnswerDraft 映射
+  Future<SubmissionDto> saveSubmission({
+    int? submissionId,
+    required int assignmentId,
+    required String status, // 'draft' / 'submitted'
+    required Map<int, AnswerDraft> answers,
+    bool includeUnanswered = false,
+  }) async {
+    final url = submissionId == null
+        ? Uri.parse(
+            '${Env.apiBaseUrl}/api/assignments/submissions/',
+          )
+        : Uri.parse(
+            '${Env.apiBaseUrl}/api/assignments/submissions/$submissionId/',
+          );
+
+    // 把 AnswerDraft 映射成后端需要的 AnswerInputSerializer 结构
+    final answerList = <Map<String, dynamic>>[];
+
+    answers.forEach((questionId, draft) {
+      final hasData =
+          (draft.textValue != null && draft.textValue!.trim().isNotEmpty) ||
+              draft.numberValue != null ||
+              draft.selectedOptionIds.isNotEmpty ||
+              draft.mediaFileIds.isNotEmpty;
+
+      if (!includeUnanswered && !hasData) {
+        // 不包含空答案 -> 跳过完全没填的题
+        return;
+      }
+
+      final m = <String, dynamic>{
+        'question': questionId,
+      };
+
+      if (draft.textValue != null) {
+        m['text_value'] = draft.textValue;
+      }
+      if (draft.numberValue != null) {
+        m['number_value'] = draft.numberValue;
+      }
+      if (draft.selectedOptionIds.isNotEmpty) {
+        m['selected_option_ids'] = draft.selectedOptionIds;
+      }
+      if (draft.mediaFileIds.isNotEmpty) {
+        m['media_file_ids'] = draft.mediaFileIds;
+      }
+
+      answerList.add(m);
+    });
+
+    final body = jsonEncode({
+      'assignment': assignmentId,
+      'status': status,
+      'answers': answerList,
+    });
+
+    final headers = {
+      'Authorization': _authBasic ?? '',
+      'Content-Type': 'application/json',
+    };
+
+    final resp = submissionId == null
+        ? await _client.post(url, headers: headers, body: body)
+        : await _client.put(url, headers: headers, body: body);
+
+    if (resp.statusCode != 200 && resp.statusCode != 201) {
+      throw ApiException('保存提交失败: ${resp.statusCode} ${resp.body}');
+    }
+
+    final data = jsonDecode(resp.body) as Map<String, dynamic>;
+    return SubmissionDto.fromJson(data);
   }
 }

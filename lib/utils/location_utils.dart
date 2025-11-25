@@ -7,39 +7,39 @@ import 'package:geolocator/geolocator.dart';
 /// - 不抛异常，失败时返回 null
 /// - 内部处理好权限 & 服务开关
 Future<Position?> determineUserPosition() async {
-  debugPrint('LOC UTIL: start determineUserPosition()');
+  // debugPrint('LOC UTIL: start determineUserPosition()');
 
   try {
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    debugPrint('LOC UTIL: serviceEnabled = $serviceEnabled');
+    // debugPrint('LOC UTIL: serviceEnabled = $serviceEnabled');
     if (!serviceEnabled) {
       return null;
     }
 
     var permission = await Geolocator.checkPermission();
-    debugPrint('LOC UTIL: permission(before) = $permission');
+    // debugPrint('LOC UTIL: permission(before) = $permission');
 
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
-      debugPrint('LOC UTIL: permission(after request) = $permission');
+      // debugPrint('LOC UTIL: permission(after request) = $permission');
       if (permission == LocationPermission.denied) {
         return null;
       }
     }
 
     if (permission == LocationPermission.deniedForever) {
-      debugPrint('LOC UTIL: permission = deniedForever');
+      // debugPrint('LOC UTIL: permission = deniedForever');
       return null;
     }
 
     final pos = await Geolocator.getCurrentPosition(
       desiredAccuracy: LocationAccuracy.high,
     );
-    debugPrint(
-        'LOC UTIL: got position = (${pos.latitude}, ${pos.longitude})');
+    // debugPrint(
+    //     'LOC UTIL: got position = (${pos.latitude}, ${pos.longitude})');
     return pos;
   } catch (e) {
-    debugPrint('LOC UTIL ERROR: $e');
+    // debugPrint('LOC UTIL ERROR: $e');
     return null;
   }
 }
