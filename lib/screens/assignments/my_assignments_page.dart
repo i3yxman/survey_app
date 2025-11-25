@@ -219,12 +219,17 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> {
             width: double.infinity,
             child: ElevatedButton(
               onPressed: primaryEnabled
-                  ? () {
-                      Navigator.pushNamed(
+                  ? () async {
+                      final needRefresh = await Navigator.pushNamed(
                         context,
                         '/survey-fill',
                         arguments: a,
                       );
+
+                      // ⭐ 如果填写页面告诉我们需要刷新，则重新拉任务
+                      if (needRefresh == true) {
+                        await _refresh();
+                      }
                     }
                   : null,
               style: ElevatedButton.styleFrom(

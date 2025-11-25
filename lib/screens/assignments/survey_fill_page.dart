@@ -49,6 +49,9 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
   bool _savingDraft = false;
   bool _submitting = false;
 
+  // 用于告诉上一个页面“我这边有更新，需要刷新列表”
+  bool _shouldRefreshOnPop = false;
+
   // 已提交的问卷只允许查看，不允许再编辑
   bool get _isReadOnly => _submissionStatus == 'submitted';
 
@@ -238,6 +241,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
       setState(() {
         _submissionId = dto.id;
         _submissionStatus = dto.status;
+        _shouldRefreshOnPop = true; // 草稿保存成功后，需要刷新列表
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -314,6 +318,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
       setState(() {
         _submissionId = dto.id;
         _submissionStatus = dto.status;
+        _shouldRefreshOnPop = true; // 提交成功后，需要刷新列表
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1122,173 +1127,182 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     }
     final subtitleText = subtitleParts.join(' · ');
 
-    return Scaffold(
-      appBar: AppBar(
-        centerTitle: false,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              _assignment.questionnaireTitle ?? '问卷填写',
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: theme.colorScheme.onPrimary,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            if (subtitleText.isNotEmpty) ...[
-              const SizedBox(height: 2),
+    return WillPopScope(
+      onWillPop: () async {
+        if (_shouldRefreshOnPop) {
+          Navigator.of(context).pop(true); // 把 true 返回给上一页
+          return false; // 阻止默认 pop
+        }
+        return true;
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          centerTitle: false,
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
               Text(
-                subtitleText,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color:
-                      theme.colorScheme.onPrimary.withOpacity(0.8),
+                _assignment.questionnaireTitle ?? '问卷填写',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: theme.colorScheme.onPrimary,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
-            ],
-          ],
-        ),
-      ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              // 顶部进度条
-              Row(
-                children: [
-                  Expanded(
-                    child: LinearProgressIndicator(
-                      value: progressValue,
-                    ),
+              if (subtitleText.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(
+                  subtitleText,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color:
+                        theme.colorScheme.onPrimary.withOpacity(0.8),
                   ),
-                  const SizedBox(width: 12),
-                  Text('$answeredCount/$total'),
-                ],
-              ),
-              const SizedBox(height: 16),
-
-              // 题目列表
-              Expanded(
-                child: ListView.separated(
-                  itemCount: visibleQuestions.length,
-                  separatorBuilder: (_, __) =>
-                      const SizedBox(height: 12),
-                  itemBuilder: (context, index) {
-                    final qu = visibleQuestions[index];
-                    final draft =
-                        _answers[qu.id] ?? AnswerDraft(questionId: qu.id);
-
-                    return Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment:
-                              CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              crossAxisAlignment:
-                                  CrossAxisAlignment.start,
-                              children: [
-                                if (qu.required)
-                                  const Text(
-                                    '* ',
-                                    style: TextStyle(
-                                      color: Colors.red,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                Expanded(
-                                  child: Text(
-                                    qu.text,
-                                    style: theme
-                                        .textTheme.titleMedium,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            _buildQuestionBody(qu, draft),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              if (_isReadOnly)
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    '当前状态：已提交（仅供查看）',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: Colors.grey,
-                    ),
-                  ),
-                )
-              else ...[
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed:
-                            (_savingDraft || _hasUploadingMedia) ? null : _saveDraft,
-                        child: _savingDraft
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Text('保存草稿'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed:
-                            (_submitting || _hasUploadingMedia) ? null : _submit,
-                        child: _submitting
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor:
-                                      AlwaysStoppedAnimation(
-                                          Colors.white),
-                                ),
-                              )
-                            : const Text('提交问卷'),
-                      ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 8),
-
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    _submissionStatus == 'draft'
-                        ? '当前状态：草稿（尚未提交）'
-                        : '当前状态：未保存',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: Colors.grey,
-                    ),
-                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ],
           ),
         ),
-      ),
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                // 顶部进度条
+                Row(
+                  children: [
+                    Expanded(
+                      child: LinearProgressIndicator(
+                        value: progressValue,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Text('$answeredCount/$total'),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // 题目列表
+                Expanded(
+                  child: ListView.separated(
+                    itemCount: visibleQuestions.length,
+                    separatorBuilder: (_, __) =>
+                        const SizedBox(height: 12),
+                    itemBuilder: (context, index) {
+                      final qu = visibleQuestions[index];
+                      final draft =
+                          _answers[qu.id] ?? AnswerDraft(questionId: qu.id);
+
+                      return Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment:
+                                CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                children: [
+                                  if (qu.required)
+                                    const Text(
+                                      '* ',
+                                      style: TextStyle(
+                                        color: Colors.red,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  Expanded(
+                                    child: Text(
+                                      qu.text,
+                                      style: theme
+                                          .textTheme.titleMedium,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              _buildQuestionBody(qu, draft),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                if (_isReadOnly)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      '当前状态：已提交（仅供查看）',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: Colors.grey,
+                      ),
+                    ),
+                  )
+                else ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed:
+                              (_savingDraft || _hasUploadingMedia) ? null : _saveDraft,
+                          child: _savingDraft
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Text('保存草稿'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed:
+                              (_submitting || _hasUploadingMedia) ? null : _submit,
+                          child: _submitting
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor:
+                                        AlwaysStoppedAnimation(
+                                            Colors.white),
+                                  ),
+                                )
+                              : const Text('提交问卷'),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      _submissionStatus == 'draft'
+                          ? '当前状态：草稿（尚未提交）'
+                          : '当前状态：未保存',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),  
     );
   }
 }
