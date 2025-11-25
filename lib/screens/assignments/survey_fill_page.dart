@@ -52,6 +52,10 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
   // 已提交的问卷只允许查看，不允许再编辑
   bool get _isReadOnly => _submissionStatus == 'submitted';
 
+  // 是否存在正在上传媒体的题目
+  bool get _hasUploadingMedia =>
+      _answers.values.any((d) => d.isUploadingMedia);
+
   final ImagePicker _picker = ImagePicker();
 
   @override
@@ -360,7 +364,11 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     );
   }
 
-  /// 选择并上传媒体（多张/多段：用户可多次点击按钮）
+  /// 选择并上传媒体
+  /// - 图片：相册支持多选，拍照单张
+  /// - 视频：目前一次一段（可以多次点按钮）
+  /// - 选择后先弹出“上传确认”对话框，再开始上传
+  /// - 上传时会显示整体进度条
   Future<void> _pickAndUploadMedia(
     QuestionDto q,
     AnswerDraft draft,
@@ -371,78 +379,124 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     final source = await _pickSource();
     if (source == null) return;
 
-    XFile? picked;
+    // 1. 选文件（图片相册支持多选）
+    List<XFile> pickedFiles = [];
 
     try {
       if (mediaType == 'image') {
-        picked = await _picker.pickImage(
-          source: source,
-          imageQuality: 85,
-        );
+        if (source == ImageSource.gallery) {
+          // 相册多选图片
+          final files = await _picker.pickMultiImage(
+            imageQuality: 85,
+          );
+          pickedFiles = files;
+        } else {
+          // 拍照单张
+          final single = await _picker.pickImage(
+            source: source,
+            imageQuality: 85,
+          );
+          if (single != null) {
+            pickedFiles = [single];
+          }
+        }
       } else {
-        picked = await _picker.pickVideo(
+        // 视频目前 image_picker 只支持单选
+        final single = await _picker.pickVideo(
           source: source,
           maxDuration: const Duration(seconds: 60),
         );
+        if (single != null) {
+          pickedFiles = [single];
+        }
       }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('打开${mediaType == "image" ? "相机/相册" : "相机/相册"}失败：$e')),
+        SnackBar(content: Text('打开相机/相册失败：$e')),
       );
       return;
     }
 
-    if (picked == null) return;
+    // 用户取消选择
+    if (pickedFiles.isEmpty) return;
 
+    // 2. 选择完之后，弹出“是否上传”对话框，有一个上传按钮
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: Text(mediaType == 'image' ? '上传图片' : '上传视频'),
+          content: Text('已选择 ${pickedFiles.length} 个文件，是否立即上传？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('取消'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('上传'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
+    // 3. 开始上传：
+    //    先改状态 -> 回到问卷页面时立刻显示“正在上传”和进度条
     setState(() {
-      // 每次重新上传前，先清空上一次的错误提示
-      draft.mediaError = null;
       draft.isUploadingMedia = true;
+      _uploadProgress[q.id] = 0.0;
     });
 
-    try {
-      final bytes = await picked.readAsBytes();
-      final filename = picked.name;
+    final total = pickedFiles.length;
+    int successCount = 0;
 
-      final dto = await ApiService().uploadMedia(
-        questionId: q.id,
-        mediaType: mediaType,
-        fileBytes: bytes,
-        filename: filename,
-      );
+    try {
+      for (var i = 0; i < total; i++) {
+        final file = pickedFiles[i];
+        final bytes = await file.readAsBytes();
+        final filename = file.name;
+
+        final dto = await ApiService().uploadMedia(
+          questionId: q.id,
+          mediaType: mediaType,
+          fileBytes: bytes,
+          filename: filename,
+        );
+
+        if (!mounted) return;
+
+        setState(() {
+          // 加入缓存，方便显示缩略图
+          _mediaCache[dto.id] = dto;
+          // 加入当前题目的已上传列表
+          draft.mediaFileIds.add(dto.id);
+          // 整体进度：按已成功数量 / 总数量 来算
+          successCount++;
+          _uploadProgress[q.id] = successCount / total;
+        });
+      }
 
       if (!mounted) return;
-      setState(() {
-        // ⭐ 1）把 dto 直接加入缓存
-        _mediaCache[dto.id] = dto;
-
-        // ⭐ 2）加入 draft.mediaFileIds，这样页面会立即显示缩略图
-        draft.mediaFileIds.add(dto.id);
-      });
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            mediaType == 'image' ? '图片上传成功' : '视频上传成功',
+            mediaType == 'image'
+                ? '成功上传 $successCount 张图片'
+                : '成功上传 $successCount 段视频',
           ),
         ),
       );
     } on ApiException catch (e) {
       if (!mounted) return;
-      setState(() {
-        draft.mediaError = e.message.isNotEmpty
-            ? '上传失败：${e.message}'
-            : '上传失败，请检查网络后重试';
-      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('上传失败：${e.message}')),
       );
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        draft.mediaError = '上传失败，请检查网络后重试';
-      });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('上传失败')),
       );
@@ -450,6 +504,8 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
       if (mounted) {
         setState(() {
           draft.isUploadingMedia = false;
+          // 上传结束后把进度条去掉（缩略图已经出现）
+          _uploadProgress.remove(q.id);
         });
       }
     }
@@ -766,6 +822,13 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                   ),
               ],
             ),
+            // 当前题目正在上传时，显示一个整体进度条
+            if (_uploadProgress.containsKey(q.id)) ...[
+              const SizedBox(height: 8),
+              LinearProgressIndicator(
+                value: _uploadProgress[q.id],
+              ),
+            ],
             const SizedBox(height: 8),
             OutlinedButton(
               onPressed: readOnly || draft.isUploadingMedia
@@ -814,6 +877,13 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                   ),
               ],
             ),
+            // 当前题目正在上传时，显示一个整体进度条
+            if (_uploadProgress.containsKey(q.id)) ...[
+              const SizedBox(height: 8),
+              LinearProgressIndicator(
+                value: _uploadProgress[q.id],
+              ),
+            ],
             const SizedBox(height: 8),
             OutlinedButton(
               onPressed: readOnly || draft.isUploadingMedia
@@ -1039,7 +1109,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                     Expanded(
                       child: OutlinedButton(
                         onPressed:
-                            _savingDraft ? null : _saveDraft,
+                            (_savingDraft || _hasUploadingMedia) ? null : _saveDraft,
                         child: _savingDraft
                             ? const SizedBox(
                                 width: 20,
@@ -1055,7 +1125,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                     Expanded(
                       child: ElevatedButton(
                         onPressed:
-                            _submitting ? null : _submit,
+                            (_submitting || _hasUploadingMedia) ? null : _submit,
                         child: _submitting
                             ? const SizedBox(
                                 width: 20,
