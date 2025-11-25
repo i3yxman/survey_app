@@ -364,6 +364,39 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     );
   }
 
+  /// 显示一个简单的全屏“正在处理视频”弹窗
+  void _showProcessingDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false, // 不允许点击空白关闭
+      builder: (_) {
+        return Container(
+          color: Colors.black54,
+          child: const Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(color: Colors.white),
+                SizedBox(height: 16),
+                Text(
+                  '正在处理视频，请稍候…',
+                  style: TextStyle(color: Colors.white, fontSize: 16),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// 关闭“正在处理视频”弹窗
+  void _hideProcessingDialog() {
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+  }
+
   /// 选择并上传媒体
   /// - 图片：相册支持多选，拍照单张
   /// - 视频：目前一次一段（可以多次点按钮）
@@ -402,12 +435,19 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
         }
       } else {
         // 视频目前 image_picker 只支持单选
-        final single = await _picker.pickVideo(
-          source: source,
-          maxDuration: const Duration(seconds: 60),
-        );
-        if (single != null) {
-          pickedFiles = [single];
+        // ⭐ 选视频时，先显示一个“正在处理视频”的全屏遮罩
+        _showProcessingDialog();
+        try {
+          final single = await _picker.pickVideo(
+            source: source,
+            maxDuration: const Duration(seconds: 60),
+          );
+          if (single != null) {
+            pickedFiles = [single];
+          }
+        } finally {
+          // ⭐ 不管成功/失败/取消，都把“正在处理视频”的弹窗关掉
+          _hideProcessingDialog();
         }
       }
     } catch (e) {
@@ -568,6 +608,44 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     }
   }
 
+  // ⭐ 新增：删除某个媒体文件
+  void _removeMedia(QuestionDto q, AnswerDraft draft, int mediaId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('删除媒体'),
+          content: const Text('确定要删除这个文件吗？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('取消'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('删除'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
+    setState(() {
+      draft.mediaFileIds.remove(mediaId);
+      _mediaCache.remove(mediaId);
+      _videoThumbCache.remove(mediaId);
+    });
+
+    // 未来如果有后端删除接口，可以在这里调 API:
+    // await ApiService().deleteMedia(mediaId);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已删除')),
+    );
+  }
+
   /// 构建某题目的媒体缩略图区域（图片 / 视频共用）
   Widget _buildMediaThumbnails(
     QuestionDto q,
@@ -620,27 +698,52 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                     ),
                   );
                 },
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.network(
-                    mediaList[i].fileUrl,
-                    width: 80,
-                    height: 80,
-                    fit: BoxFit.cover,
-                    errorBuilder: (ctx, err, stack) => Container(
-                      width: 80,
-                      height: 80,
-                      color: Colors.grey.shade300,
-                      child: const Icon(Icons.broken_image),
+                child: Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.network(
+                        mediaList[i].fileUrl,
+                        width: 80,
+                        height: 80,
+                        fit: BoxFit.cover,
+                        errorBuilder: (ctx, err, stack) => Container(
+                          width: 80,
+                          height: 80,
+                          color: Colors.grey.shade300,
+                          child: const Icon(Icons.broken_image),
+                        ),
+                      ),
                     ),
-                  ),
+
+                    // ⭐右上角删除按钮
+                    Positioned(
+                      right: 0,
+                      top: 0,
+                      child: GestureDetector(
+                        onTap: () => _removeMedia(q, draft, mediaList[i].id),
+                        child: Container(
+                          decoration: const BoxDecoration(
+                            color: Colors.black54,
+                            shape: BoxShape.circle,
+                          ),
+                          padding: const EdgeInsets.all(2),
+                          child: const Icon(
+                            Icons.close,
+                            size: 16,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
           ],
         ),
       );
     } else {
-      // 视频缩略图：生成真实缩略图 + 播放按钮
+      // 视频缩略图：生成真实缩略图 + 播放按钮 + 删除按钮
       return Padding(
         padding: const EdgeInsets.only(top: 8),
         child: Wrap(
@@ -659,52 +762,77 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                     ),
                   );
                 },
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: SizedBox(
-                    width: 100,
-                    height: 60,
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        // 缩略图
-                        FutureBuilder<Uint8List?>(
-                          future: _loadVideoThumbnail(
-                            mediaList[i].id,
-                            mediaList[i].fileUrl,
-                          ),
-                          builder: (context, snapshot) {
-                            if (snapshot.hasData && snapshot.data != null) {
-                              return Image.memory(
-                                snapshot.data!,
-                                fit: BoxFit.cover,
-                              );
-                            } else {
-                              // 缩略图还没生成出来时的占位
-                              return Container(
-                                color: Colors.black87,
-                                child: const Center(
-                                  child: Icon(
-                                    Icons.videocam,
-                                    color: Colors.white54,
-                                    size: 28,
-                                  ),
-                                ),
-                              );
-                            }
-                          },
+                child: Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: SizedBox(
+                        width: 100,
+                        height: 60,
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            // 缩略图
+                            FutureBuilder<Uint8List?>(
+                              future: _loadVideoThumbnail(
+                                mediaList[i].id,
+                                mediaList[i].fileUrl,
+                              ),
+                              builder: (context, snapshot) {
+                                if (snapshot.hasData && snapshot.data != null) {
+                                  return Image.memory(
+                                    snapshot.data!,
+                                    fit: BoxFit.cover,
+                                  );
+                                } else {
+                                  // 缩略图还没生成出来时的占位
+                                  return Container(
+                                    color: Colors.black87,
+                                    child: const Center(
+                                      child: Icon(
+                                        Icons.videocam,
+                                        color: Colors.white54,
+                                        size: 28,
+                                      ),
+                                    ),
+                                  );
+                                }
+                              },
+                            ),
+                            // 中间的播放按钮
+                            const Center(
+                              child: Icon(
+                                Icons.play_circle_fill,
+                                color: Colors.white,
+                                size: 32,
+                              ),
+                            ),
+                          ],
                         ),
-                        // 播放按钮覆盖在上面
-                        const Center(
-                          child: Icon(
-                            Icons.play_circle_fill,
-                            color: Colors.white,
-                            size: 32,
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
+
+                    // 右上角删除按钮
+                    Positioned(
+                      right: 0,
+                      top: 0,
+                      child: GestureDetector(
+                        onTap: () => _removeMedia(q, draft, mediaList[i].id),
+                        child: Container(
+                          decoration: const BoxDecoration(
+                            color: Colors.black54,
+                            shape: BoxShape.circle,
+                          ),
+                          padding: const EdgeInsets.all(2),
+                          child: const Icon(
+                            Icons.close,
+                            size: 16,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
           ],
