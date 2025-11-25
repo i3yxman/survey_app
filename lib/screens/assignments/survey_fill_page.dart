@@ -33,6 +33,9 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
   // 当前正在加载信息的媒体 ID（避免重复重复请求）
   final Set<int> _loadingMediaIds = {};
 
+  // 某个题正在上传的整体进度（0.0 ~ 1.0）
+  final Map<int, double> _uploadProgress = {};
+
   // 视频缩略图缓存：mediaFileId -> 缩略图二进制数据
   final Map<int, Uint8List> _videoThumbCache = {};
 
