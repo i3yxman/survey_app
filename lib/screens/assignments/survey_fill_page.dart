@@ -9,6 +9,21 @@ import 'package:video_thumbnail/video_thumbnail.dart';
 import '../../models/api_models.dart';
 import '../../services/api_service.dart';
 
+import 'dart:io';
+import 'dart:math' as math;
+
+class _PendingUpload {
+  final String path;       // 本地文件路径
+  final String mediaType;  // 'image' / 'video'
+  double progress;         // 0.0 ~ 1.0
+
+  _PendingUpload({
+    required this.path,
+    required this.mediaType,
+    this.progress = 0.0,
+  });
+}
+
 class SurveyFillPage extends StatefulWidget {
   const SurveyFillPage({super.key});
 
@@ -33,8 +48,8 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
   // 当前正在加载信息的媒体 ID（避免重复重复请求）
   final Set<int> _loadingMediaIds = {};
 
-  // 某个题正在上传的整体进度（0.0 ~ 1.0）
-  final Map<int, double> _uploadProgress = {};
+  // 某个题目正在上传的本地文件列表（用于画缩略图上的圈圈）
+  final Map<int, List<_PendingUpload>> _pendingUploads = {};
 
   // 视频缩略图缓存：mediaFileId -> 缩略图二进制数据
   final Map<int, Uint8List> _videoThumbCache = {};
@@ -72,6 +87,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
 
     _loadQuestionnaireAndSubmission();
   }
+
 
   /// 找出所有指向某题的逻辑（谁的 outgoing_logics 里 goto_question == q.id）
   List<QuestionLogicDto> _getIncomingLogics(QuestionDto q) {
@@ -490,18 +506,33 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     if (confirmed != true) return;
 
     // 3. 开始上传：
-    //    先改状态 -> 回到问卷页面时立刻显示“正在上传”和进度条
+    //    先标记该题目处于“正在上传”状态
     setState(() {
       draft.isUploadingMedia = true;
-      _uploadProgress[q.id] = 0.0;
+      _pendingUploads.putIfAbsent(q.id, () => []);
     });
 
-    final total = pickedFiles.length;
-    int successCount = 0;
+    final totalFiles = pickedFiles.length;
+    int successFiles = 0;
 
     try {
-      for (var i = 0; i < total; i++) {
+      // 先准备一个列表，收集这次成功上传的所有 dto
+      final uploadedDtos = <MediaFileDto>[];
+
+      for (var i = 0; i < totalFiles; i++) {
         final file = pickedFiles[i];
+
+        // 为当前文件创建一个“正在上传”的本地缩略图项
+        final pending = _PendingUpload(
+          path: file.path,
+          mediaType: mediaType,
+          progress: 0.0,
+        );
+
+        setState(() {
+          _pendingUploads[q.id]!.add(pending);
+        });
+
         final bytes = await file.readAsBytes();
         final filename = file.name;
 
@@ -510,38 +541,63 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
           mediaType: mediaType,
           fileBytes: bytes,
           filename: filename,
+          onProgress: (sent, totalBytes) {
+            if (!mounted || totalBytes == 0) return;
+            final p = sent / totalBytes;
+
+            debugPrint('upload progress: $sent / $totalBytes -> $p');
+
+            setState(() {
+              // 一直更新这个 pending 的进度
+              pending.progress = p.clamp(0.0, 1.0);
+            });
+          },
         );
 
         if (!mounted) return;
 
-        setState(() {
-          // 加入缓存，方便显示缩略图
-          _mediaCache[dto.id] = dto;
-          // 加入当前题目的已上传列表
-          draft.mediaFileIds.add(dto.id);
-          // 整体进度：按已成功数量 / 总数量 来算
-          successCount++;
-          _uploadProgress[q.id] = successCount / total;
-        });
+        // 这里只记录起来，不立刻把 pending 删掉、也不立刻把 dto 加到 UI 里
+        uploadedDtos.add(dto);
+        successFiles++;
       }
 
       if (!mounted) return;
+
+      // ⭐⭐ 所有文件都上传成功以后，再一次性更新 UI：
+      setState(() {
+        // 1) 清掉这个题目下面所有“正在上传”的本地缩略图
+        _pendingUploads.remove(q.id);
+
+        // 2) 把这次成功上传的所有 dto 一次性加到已上传列表里
+        for (final dto in uploadedDtos) {
+          _mediaCache[dto.id] = dto;
+          draft.mediaFileIds.add(dto.id);
+        }
+      });
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             mediaType == 'image'
-                ? '成功上传 $successCount 张图片'
-                : '成功上传 $successCount 段视频',
+                ? '成功上传 $successFiles 张图片'
+                : '成功上传 $successFiles 段视频',
           ),
         ),
       );
     } on ApiException catch (e) {
       if (!mounted) return;
+      setState(() {
+        // ❗ 失败：清掉这个题目下面所有“正在上传”的缩略图
+        _pendingUploads.remove(q.id);
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('上传失败：${e.message}')),
       );
     } catch (e) {
       if (!mounted) return;
+      setState(() {
+        _pendingUploads.remove(q.id);
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('上传失败')),
       );
@@ -549,8 +605,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
       if (mounted) {
         setState(() {
           draft.isUploadingMedia = false;
-          // 上传结束后把进度条去掉（缩略图已经出现）
-          _uploadProgress.remove(q.id);
         });
       }
     }
@@ -658,42 +712,36 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     String mediaType,
   ) {
     final ids = draft.mediaFileIds;
-    if (ids.isEmpty) {
+    final pendingList = _pendingUploads[q.id] ?? [];
+
+    // 如果既没有已上传，也没有正在上传的
+    if (ids.isEmpty && pendingList.isEmpty) {
       return const SizedBox.shrink();
     }
 
-    // 触发加载（异步，不会阻塞 build）
-    _ensureMediaLoaded(ids);
+    // 触发加载已上传媒体
+    if (ids.isNotEmpty) {
+      _ensureMediaLoaded(ids);
+    }
 
     final mediaList = ids
         .map((id) => _mediaCache[id])
         .whereType<MediaFileDto>()
         .toList();
 
-    if (mediaList.isEmpty) {
-      // 数据还在加载中
-      return const Padding(
-        padding: EdgeInsets.only(top: 8),
-        child: SizedBox(
-          height: 40,
-          child: Center(
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-        ),
-      );
-    }
-
-    if (mediaType == 'image') {
-      // 图片缩略图 + 点击进入图片浏览
-      return Padding(
-        padding: const EdgeInsets.only(top: 8),
-        child: Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (var i = 0; i < mediaList.length; i++)
-              GestureDetector(
-                onTap: () {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          // ============================================
+          //            已上传 —— 正常显示
+          // ============================================
+          for (var i = 0; i < mediaList.length; i++)
+            GestureDetector(
+              onTap: () {
+                if (mediaType == "image") {
                   Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (_) => ImageGalleryPage(
@@ -702,62 +750,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                       ),
                     ),
                   );
-                },
-                child: Stack(
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.network(
-                        mediaList[i].fileUrl,
-                        width: 80,
-                        height: 80,
-                        fit: BoxFit.cover,
-                        errorBuilder: (ctx, err, stack) => Container(
-                          width: 80,
-                          height: 80,
-                          color: Colors.grey.shade300,
-                          child: const Icon(Icons.broken_image),
-                        ),
-                      ),
-                    ),
-
-                    // ⭐右上角删除按钮
-                    Positioned(
-                      right: 0,
-                      top: 0,
-                      child: GestureDetector(
-                        onTap: () => _removeMedia(q, draft, mediaList[i].id),
-                        child: Container(
-                          decoration: const BoxDecoration(
-                            color: Colors.black54,
-                            shape: BoxShape.circle,
-                          ),
-                          padding: const EdgeInsets.all(2),
-                          child: const Icon(
-                            Icons.close,
-                            size: 16,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-          ],
-        ),
-      );
-    } else {
-      // 视频缩略图：生成真实缩略图 + 播放按钮 + 删除按钮
-      return Padding(
-        padding: const EdgeInsets.only(top: 8),
-        child: Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (var i = 0; i < mediaList.length; i++)
-              GestureDetector(
-                onTap: () {
+                } else {
                   Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (_) => VideoGalleryPage(
@@ -766,19 +759,21 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                       ),
                     ),
                   );
-                },
-                child: Stack(
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: SizedBox(
-                        width: 100,
-                        height: 60,
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            // 缩略图
-                            FutureBuilder<Uint8List?>(
+                }
+              },
+              child: Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: SizedBox(
+                      width: mediaType == 'image' ? 80 : 100,
+                      height: mediaType == 'image' ? 80 : 60,
+                      child: mediaType == 'image'
+                          ? Image.network(
+                              mediaList[i].fileUrl,
+                              fit: BoxFit.cover,
+                            )
+                          : FutureBuilder<Uint8List?>(
                               future: _loadVideoThumbnail(
                                 mediaList[i].id,
                                 mediaList[i].fileUrl,
@@ -789,61 +784,142 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                                     snapshot.data!,
                                     fit: BoxFit.cover,
                                   );
-                                } else {
-                                  // 缩略图还没生成出来时的占位
-                                  return Container(
-                                    color: Colors.black87,
-                                    child: const Center(
-                                      child: Icon(
-                                        Icons.videocam,
-                                        color: Colors.white54,
-                                        size: 28,
-                                      ),
-                                    ),
-                                  );
                                 }
+                                return Container(
+                                  color: Colors.black87,
+                                  child: const Center(
+                                    child: Icon(Icons.videocam,
+                                        color: Colors.white54, size: 28),
+                                  ),
+                                );
                               },
                             ),
-                            // 中间的播放按钮
-                            const Center(
+                    ),
+                  ),
+
+                  // 删除按钮
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    child: GestureDetector(
+                      onTap: () =>
+                          _removeMedia(q, draft, mediaList[i].id),
+                      child: Container(
+                        decoration: const BoxDecoration(
+                          color: Colors.black54,
+                          shape: BoxShape.circle,
+                        ),
+                        padding: const EdgeInsets.all(2),
+                        child: const Icon(Icons.close,
+                            size: 16, color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          //           正在上传 —— 本地缩略图 + 灰色遮罩 + 线性进度条
+          for (final pending in pendingList)
+            Stack(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: SizedBox(
+                    width: mediaType == 'image' ? 80 : 100,
+                    height: mediaType == 'image' ? 80 : 60,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        // 本地预览：图片显示真实图片；视频显示黑色背景+icon
+                        if (pending.mediaType == 'image')
+                          Image.file(
+                            File(pending.path),
+                            fit: BoxFit.cover,
+                          )
+                        else
+                          Container(
+                            color: Colors.black87,
+                            child: const Center(
                               child: Icon(
-                                Icons.play_circle_fill,
-                                color: Colors.white,
-                                size: 32,
+                                Icons.videocam,
+                                color: Colors.white54,
+                                size: 28,
                               ),
                             ),
-                          ],
-                        ),
-                      ),
-                    ),
+                          ),
 
-                    // 右上角删除按钮
-                    Positioned(
-                      right: 0,
-                      top: 0,
-                      child: GestureDetector(
-                        onTap: () => _removeMedia(q, draft, mediaList[i].id),
-                        child: Container(
-                          decoration: const BoxDecoration(
-                            color: Colors.black54,
-                            shape: BoxShape.circle,
-                          ),
-                          padding: const EdgeInsets.all(2),
-                          child: const Icon(
-                            Icons.close,
-                            size: 16,
-                            color: Colors.white,
-                          ),
+                        // 灰色遮罩，表示“不可操作”
+                        Container(
+                          color: Colors.black26,
                         ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // 中间一个固定的“上传中…”标签，无动画
+                Positioned.fill(
+                  child: Center(
+                    // ⭐ 不再根据 progress 判断，pending 在列表里时就一直显示“上传中”
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          SizedBox(
+                            width: 12,
+                            height: 12,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation(Colors.white),
+                            ),
+                          ),
+                          SizedBox(width: 6),
+                          Text(
+                            '上传中…',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
+                  ),
                 ),
-              ),
-          ],
-        ),
-      );
-    }
+
+                // 底部一条线性进度条，显示真实进度（0.0 ~ 1.0）
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: SizedBox(
+                    height: 4,
+                    child: ClipRRect(
+                      borderRadius: const BorderRadius.only(
+                        bottomLeft: Radius.circular(8),
+                        bottomRight: Radius.circular(8),
+                      ),
+                      child: LinearProgressIndicator(
+                        value: pending.progress.clamp(0.0, 1.0),
+                        backgroundColor: Colors.white12,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
   }
 
   /// 构建不同题型的输入控件
@@ -936,7 +1012,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '图片上传题目（可多次上传多张图片）',
+              '图片上传题目（可上传多张图片）',
               style: Theme.of(context)
                   .textTheme
                   .bodySmall
@@ -955,13 +1031,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                   ),
               ],
             ),
-            // 当前题目正在上传时，显示一个整体进度条
-            if (_uploadProgress.containsKey(q.id)) ...[
-              const SizedBox(height: 8),
-              LinearProgressIndicator(
-                value: _uploadProgress[q.id],
-              ),
-            ],
             const SizedBox(height: 8),
             OutlinedButton(
               onPressed: readOnly || draft.isUploadingMedia
@@ -991,7 +1060,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '视频上传题目（可多次上传多段视频）',
+              '视频上传题目（可上传多段视频）',
               style: Theme.of(context)
                   .textTheme
                   .bodySmall
@@ -1010,13 +1079,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                   ),
               ],
             ),
-            // 当前题目正在上传时，显示一个整体进度条
-            if (_uploadProgress.containsKey(q.id)) ...[
-              const SizedBox(height: 8),
-              LinearProgressIndicator(
-                value: _uploadProgress[q.id],
-              ),
-            ],
             const SizedBox(height: 8),
             OutlinedButton(
               onPressed: readOnly || draft.isUploadingMedia

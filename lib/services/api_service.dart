@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:dio/dio.dart';
 
 import '../config/env.dart';
 import '../models/api_models.dart';
@@ -22,10 +23,21 @@ class ApiException implements Exception {
 class ApiService {
   static final ApiService _instance = ApiService._internal();
   factory ApiService() => _instance;
-  ApiService._internal() : _client = http.Client();
 
+  // 构造函数：同时初始化 http.Client 和 Dio
+  ApiService._internal()
+      : _client = http.Client(),
+        _dio = Dio();
+
+  // ================================
+  // 字段定义
+  // ================================
   String? _authBasic; // Basic Auth token
+
   http.Client _client;
+
+  // Dio：非 late、非可空，构造函数里直接 new
+  final Dio _dio;
 
   /// 测试环境可以注入 MockClient
   @visibleForTesting
@@ -36,6 +48,7 @@ class ApiService {
   /// 手动设置 Basic Auth（测试时也可以用）
   void setAuthBasic(String basic) {
     _authBasic = basic;
+    _dio.options.headers['Authorization'] = basic;
   }
 
   /// 登录接口（POST /api/accounts/login/）
@@ -61,7 +74,6 @@ class ApiService {
       try {
         final data = jsonDecode(resp.body);
         if (data is Map<String, dynamic>) {
-          // 后端目前返回：{"non_field_errors":["用户名或密码错误"]}
           final nfe = data['non_field_errors'];
           if (nfe is List && nfe.isNotEmpty) {
             msg = nfe.first.toString();
@@ -69,9 +81,7 @@ class ApiService {
             msg = data['detail'] as String;
           }
         }
-      } catch (_) {
-        // 如果解析失败，就用默认 msg
-      }
+      } catch (_) {}
 
       throw ApiException(msg);
     }
@@ -80,6 +90,7 @@ class ApiService {
     final basicAuth =
         'Basic ${base64Encode(utf8.encode('$username:$password'))}';
     _authBasic = basicAuth;
+    _dio.options.headers['Authorization'] = basicAuth;
 
     return LoginResult.fromJson(jsonDecode(resp.body));
   }
@@ -151,19 +162,15 @@ class ApiService {
 
       if (data is Map<String, dynamic>) {
         if (data['detail'] is String) {
-          // DRF 常见格式：{"detail": "..."}
           message = data['detail'] as String;
         } else if (data['non_field_errors'] is List &&
             (data['non_field_errors'] as List).isNotEmpty) {
-          // 另一种常见格式：{"non_field_errors": ["...", "..."]}
           message = (data['non_field_errors'] as List)
               .map((e) => e.toString())
               .join('\n');
         }
       }
-    } catch (_) {
-      // 如果解析失败，就保持默认文案
-    }
+    } catch (_) {}
 
     throw ApiException(message);
   }
@@ -190,41 +197,66 @@ class ApiService {
     return jsonDecode(resp.body) as Map<String, dynamic>;
   }
 
-  /// 上传媒体文件到后端
+  /// 上传媒体文件到后端（带进度）
   Future<MediaFileDto> uploadMedia({
     required int questionId,
     required String mediaType,
     required Uint8List fileBytes,
     required String filename,
+    void Function(int sent, int total)? onProgress,
   }) async {
-    final url =
-        Uri.parse('${Env.apiBaseUrl}/api/assignments/upload-media/');
+    final url = '${Env.apiBaseUrl}/api/assignments/upload-media/';
 
-    final req = http.MultipartRequest('POST', url);
-
-    req.headers['Authorization'] = _authBasic ?? '';
-
-    req.fields['media_type'] = mediaType;
-    req.fields['question'] = questionId.toString();
-
-    req.files.add(
-      http.MultipartFile.fromBytes(
-        'file',
+    final formData = FormData.fromMap({
+      'media_type': mediaType,
+      'question': questionId.toString(),
+      'file': MultipartFile.fromBytes(
         fileBytes,
         filename: filename,
       ),
-    );
+    });
 
-    final resp = await _client.send(req);
-    final respBody = await resp.stream.bytesToString();
+    try {
+      final resp = await _dio.post(
+        url,
+        data: formData,
+        options: Options(
+          headers: {
+            // 双保险：这里也带上 Authorization
+            'Authorization': _authBasic ?? '',
+          },
+        ),
+        onSendProgress: (sent, total) {
+          if (onProgress != null) {
+            onProgress(sent, total);
+          }
+        },
+      );
 
-    if (resp.statusCode != 201) {
-      throw ApiException('上传媒体失败: ${resp.statusCode} $respBody');
+      final status = resp.statusCode ?? 0;
+      if (status != 200 && status != 201) {
+        throw ApiException('上传媒体失败: $status ${resp.data}');
+      }
+
+      dynamic data = resp.data;
+      if (data is String) {
+        data = jsonDecode(data);
+      }
+
+      return MediaFileDto.fromJson(data as Map<String, dynamic>);
+    } on DioException catch (e, stack) {
+      debugPrint('Dio upload error: $e');
+      debugPrint('Dio upload stack: $stack');
+
+      final status = e.response?.statusCode;
+      final body = e.response?.data;
+      throw ApiException('上传媒体失败: $status $body');
+    } catch (e, stack) {
+      debugPrint('Unknown upload error: $e');
+      debugPrint('Unknown upload stack: $stack');
+      throw ApiException('上传媒体失败: $e');
     }
-
-    return MediaFileDto.fromJson(jsonDecode(respBody));
   }
-
 
   /// 批量获取媒体文件详情：根据 id 列表
   Future<List<MediaFileDto>> fetchMediaFilesByIds(List<int> ids) async {
@@ -251,9 +283,7 @@ class ApiService {
         .toList();
   }
 
-  /// -------------------------
-  ///     取消任务（两阶段）
-  /// -------------------------
+  /// 取消任务（两阶段）
   Future<CancelAssignmentResponse> cancelAssignment({
     required int assignmentId,
     bool confirm = false,
@@ -297,8 +327,9 @@ class ApiService {
     return list.map((e) => SubmissionDto.fromJson(e)).toList();
   }
 
-    /// 获取问卷详情（题目 + 选项 + 跳转逻辑）
-  Future<QuestionnaireDto> fetchQuestionnaireDetail(int questionnaireId) async {
+  /// 获取问卷详情（题目 + 选项 + 跳转逻辑）
+  Future<QuestionnaireDto> fetchQuestionnaireDetail(
+      int questionnaireId) async {
     final url = Uri.parse(
       '${Env.apiBaseUrl}/api/survey/questionnaires/$questionnaireId/',
     );
@@ -319,11 +350,6 @@ class ApiService {
   }
 
   /// 保存提交（草稿 / 提交）
-  ///
-  /// - submissionId 为空时：创建新提交（POST）
-  /// - submissionId 不为空：更新已有提交（PUT）
-  /// - status：'draft' 或 'submitted'
-  /// - answers：前端的 AnswerDraft 映射
   Future<SubmissionDto> saveSubmission({
     int? submissionId,
     required int assignmentId,
@@ -350,7 +376,6 @@ class ApiService {
               draft.mediaFileIds.isNotEmpty;
 
       if (!includeUnanswered && !hasData) {
-        // 不包含空答案 -> 跳过完全没填的题
         return;
       }
 
@@ -380,7 +405,7 @@ class ApiService {
       'answers': answerList,
     });
 
-    final headers = {
+    final headers = <String, String>{
       'Authorization': _authBasic ?? '',
       'Content-Type': 'application/json',
     };
