@@ -7,7 +7,6 @@ import 'package:local_auth/local_auth.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../providers/auth_provider.dart';
-import '../../services/api_service.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -30,6 +29,9 @@ class _LoginPageState extends State<LoginPage> {
   bool _hasStoredCredential = false;  // 是否存过账号密码
 
   String _biometricLabel = '使用指纹 / 面容快速登录';
+
+  // ⭐ 当前这套“记住密码 + 生物识别”绑定的账号
+  String? _savedUsername;
 
   @override
   void initState() {
@@ -70,12 +72,13 @@ class _LoginPageState extends State<LoginPage> {
       _rememberMe = remember;
       _biometricLabel = label;
 
+      _savedUsername = savedUser; // ⭐ 绑定账号名
+
       if (remember && hasStored) {
         _usernameCtrl.text = savedUser!;
         _passwordCtrl.text = savedPass!;
       }
     });
-
   }
 
   /// 普通密码登录
@@ -95,14 +98,23 @@ class _LoginPageState extends State<LoginPage> {
         await _storage.write(key: 'username', value: username);
         await _storage.write(key: 'password', value: password);
         await _storage.write(key: 'remember_me', value: 'true');
+
+        setState(() {
+          _savedUsername = username;
+          _hasStoredCredential = true;
+        });
       } else {
-        // 只清除自己的 key，避免误删其它数据
         await _storage.delete(key: 'username');
         await _storage.delete(key: 'password');
         await _storage.write(key: 'remember_me', value: 'false');
+
+        setState(() {
+          _savedUsername = null;
+          _hasStoredCredential = false;
+        });
       }
 
-      // 提示一下：下次可以用生物识别
+      // 有生物识别能力 + 勾了“记住密码”，给一个简单提示即可
       if (_biometricAvailable && _rememberMe) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('已记住密码，下次可以$_biometricLabel')),
@@ -115,7 +127,15 @@ class _LoginPageState extends State<LoginPage> {
 
   /// 生物识别快速登录（使用已保存的账号密码）
   Future<void> _biometricLogin() async {
-    if (!_hasStoredCredential) return;
+    if (!_biometricAvailable || !_hasStoredCredential) return;
+
+    // double check：当前输入账号如果不是绑定账号，就不继续（按钮已经隐藏，这里只是再保险）
+    final inputUsername = _usernameCtrl.text.trim();
+    if (_savedUsername != null &&
+        inputUsername.isNotEmpty &&
+        inputUsername != _savedUsername) {
+      return;
+    }
 
     try {
       final didAuth = await _localAuth.authenticate(
@@ -141,13 +161,11 @@ class _LoginPageState extends State<LoginPage> {
       if (auth.error == null) {
         Navigator.pushReplacementNamed(context, '/home');
       } else {
-        // 例如密码在后台被改了
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('生物识别登录失败，请重新输入密码')),
         );
       }
     } catch (e) {
-      // 生物识别出错（未设置面容/指纹等）
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('生物识别不可用：$e')),
@@ -168,8 +186,14 @@ class _LoginPageState extends State<LoginPage> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
+    // ⭐ 只有在：设备支持 + 有保存的账号密码 + 绑定账号存在 + 当前输入账号为空或等于绑定账号 时，才显示按钮
+    final inputName = _usernameCtrl.text.trim();
+    final canUseBiometric = _biometricAvailable &&
+        _hasStoredCredential &&
+        _savedUsername != null &&
+        inputName == _savedUsername;  // ⭐ 不再允许用户名为空时显示
+
     return Scaffold(
-      // 整体渐变背景
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -221,7 +245,7 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        '使用平台账号登录即可查看个人任务、任务大厅等内容',
+                        '登录后即可查看当前任务和任务大厅',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: theme.textTheme.bodySmall?.color
                               ?.withOpacity(0.65),
@@ -260,11 +284,19 @@ class _LoginPageState extends State<LoginPage> {
                                   TextField(
                                     controller: _usernameCtrl,
                                     onChanged: (_) {
-                                      // 输入时清掉错误
+                                      // 清掉登录错误
                                       Provider.of<AuthProvider>(
                                         context,
                                         listen: false,
                                       ).clearError();
+
+                                      // ⭐ 用户名一旦改动：
+                                      // 1）清空当前密码输入
+                                      // 2）取消“记住密码”勾选
+                                      setState(() {
+                                        _passwordCtrl.clear();
+                                        _rememberMe = false;
+                                      });
                                     },
                                     decoration: InputDecoration(
                                       labelText: '用户名',
@@ -276,9 +308,9 @@ class _LoginPageState extends State<LoginPage> {
                                           : Colors.white,
                                       contentPadding:
                                           const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 12,
-                                          ),
+                                        horizontal: 12,
+                                        vertical: 12,
+                                      ),
                                       border: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(12),
                                       ),
@@ -332,9 +364,9 @@ class _LoginPageState extends State<LoginPage> {
                                           : Colors.white,
                                       contentPadding:
                                           const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 12,
-                                          ),
+                                        horizontal: 12,
+                                        vertical: 12,
+                                      ),
                                       border: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(12),
                                       ),
@@ -356,7 +388,7 @@ class _LoginPageState extends State<LoginPage> {
 
                                   const SizedBox(height: 8),
 
-                                  // 记住密码 +（预留）忘记密码
+                                  // 记住密码 + 忘记密码
                                   Row(
                                     mainAxisAlignment:
                                         MainAxisAlignment.spaceBetween,
@@ -375,54 +407,9 @@ class _LoginPageState extends State<LoginPage> {
                                         ],
                                       ),
                                       TextButton(
-                                        onPressed: () async {
-                                          final controller = TextEditingController();
-
-                                          final input = await showDialog<String?>(
-                                            context: context,
-                                            builder: (ctx) {
-                                              return AlertDialog(
-                                                title: const Text('忘记密码'),
-                                                content: TextField(
-                                                  controller: controller,
-                                                  decoration: const InputDecoration(
-                                                    labelText: '用户名或手机号',
-                                                    hintText: '请输入你的登录账号或手机号',
-                                                  ),
-                                                ),
-                                                actions: [
-                                                  TextButton(
-                                                    onPressed: () => Navigator.of(ctx).pop(null),
-                                                    child: const Text('取消'),
-                                                  ),
-                                                  TextButton(
-                                                    onPressed: () =>
-                                                        Navigator.of(ctx).pop(controller.text.trim()),
-                                                    child: const Text('确定'),
-                                                  ),
-                                                ],
-                                              );
-                                            },
-                                          );
-
-                                          if (input == null || input.isEmpty) return;
-
-                                          try {
-                                            final auth = Provider.of<AuthProvider>(context, listen: false);
-                                            final msg = await auth.requestPasswordReset(input);
-
-                                            ScaffoldMessenger.of(context).showSnackBar(
-                                              SnackBar(content: Text(msg)),
-                                            );
-                                          } on ApiException catch (e) {
-                                            ScaffoldMessenger.of(context).showSnackBar(
-                                              SnackBar(content: Text(e.message)),
-                                            );
-                                          } catch (e) {
-                                            ScaffoldMessenger.of(context).showSnackBar(
-                                              SnackBar(content: Text('请求失败：$e')),
-                                            );
-                                          }
+                                        onPressed: () {
+                                          Navigator.pushNamed(
+                                              context, '/forgot-password');
                                         },
                                         child: const Text(
                                           '忘记密码？',
@@ -455,7 +442,9 @@ class _LoginPageState extends State<LoginPage> {
                                           height: 44,
                                           width: 44,
                                           child: CircularProgressIndicator
-                                              .adaptive(),
+                                              .adaptive(
+                                            strokeWidth: 2,
+                                          ),
                                         )
                                       : SizedBox(
                                           width: double.infinity,
@@ -475,9 +464,8 @@ class _LoginPageState extends State<LoginPage> {
 
                                   const SizedBox(height: 16),
 
-                                  // 生物识别按钮（仅当设备支持且有存储时显示）
-                                  if (_biometricAvailable &&
-                                      _hasStoredCredential)
+                                  // 生物识别按钮（仅当设备支持 & 已记住密码 & 账号匹配时显示）
+                                  if (canUseBiometric)
                                     OutlinedButton.icon(
                                       onPressed: _biometricLogin,
                                       icon: const Icon(Icons.fingerprint),
