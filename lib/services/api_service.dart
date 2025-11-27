@@ -95,6 +95,106 @@ class ApiService {
     return LoginResult.fromJson(jsonDecode(resp.body));
   }
 
+  /// 修改密码
+  Future<void> changePassword({
+    required String oldPassword,
+    required String newPassword,
+  }) async {
+    final url = Uri.parse('${Env.apiBaseUrl}/api/accounts/change-password/');
+
+    final resp = await _client.post(
+      url,
+      headers: {
+        'Authorization': _authBasic ?? '',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'old_password': oldPassword,
+        'new_password': newPassword,
+      }),
+    );
+
+    if (resp.statusCode != 200) {
+      String msg = '修改密码失败：${resp.statusCode}';
+
+      try {
+        final data = jsonDecode(resp.body);
+        if (data is Map<String, dynamic>) {
+          // 情况1：ValidationError('原密码不正确') => non_field_errors
+          if (data['non_field_errors'] is List &&
+              (data['non_field_errors'] as List).isNotEmpty) {
+            msg = (data['non_field_errors'] as List).first.toString();
+          }
+          // 情况2：ValidationError({'old_password': ['原密码不正确']})
+          else if (data['old_password'] is List &&
+              (data['old_password'] as List).isNotEmpty) {
+            msg = (data['old_password'] as List).first.toString();
+          }
+          // 情况3：新密码不符合规则（长度不够等）
+          else if (data['new_password'] is List &&
+              (data['new_password'] as List).isNotEmpty) {
+            msg = (data['new_password'] as List).first.toString();
+          }
+          // 情况4：通用 detail
+          else if (data['detail'] is String) {
+            msg = data['detail'] as String;
+          }
+        }
+      } catch (_) {}
+
+      throw ApiException(msg);
+    }
+  }
+
+  /// 忘记密码：提交用户名/手机号，请后端给出下一步提示
+  Future<String> requestPasswordReset({
+    required String usernameOrPhone,
+  }) async {
+    final url = Uri.parse('${Env.apiBaseUrl}/api/accounts/forgot-password/');
+
+    final resp = await _client.post(
+      url,
+      headers: {
+        // 忘记密码通常不需要登录，可以不带 Authorization
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        // ✅ 这里改成后端期望的字段名
+        'identifier': usernameOrPhone,
+      }),
+    );
+
+    if (resp.statusCode < 200 || resp.statusCode >= 300) {
+      String msg = '请求失败：${resp.statusCode}';
+
+      try {
+        final data = jsonDecode(resp.body);
+        if (data is Map<String, dynamic>) {
+          if (data['detail'] is String) {
+            msg = data['detail'] as String;
+          }
+          // 也兼容字段错误提示，比如 {"identifier":["未找到该账号"]}
+          else if (data['identifier'] is List &&
+              (data['identifier'] as List).isNotEmpty) {
+            msg = (data['identifier'] as List).first.toString();
+          }
+        }
+      } catch (_) {}
+
+      throw ApiException(msg);
+    }
+
+    // 成功时返回后端给的 detail 文案（比如“账号 xxx 已找到，如需重置请联系管理员”）
+    try {
+      final data = jsonDecode(resp.body);
+      if (data is Map<String, dynamic> && data['detail'] is String) {
+        return data['detail'] as String;
+      }
+    } catch (_) {}
+
+    return '操作成功';
+  }
+
   /// 获取“我的任务”
   Future<List<Assignment>> getMyAssignments() async {
     final url = Uri.parse('${Env.apiBaseUrl}/api/assignments/my-assignments/');

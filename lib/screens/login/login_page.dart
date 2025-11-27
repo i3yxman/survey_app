@@ -7,6 +7,7 @@ import 'package:local_auth/local_auth.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../providers/auth_provider.dart';
+import '../../services/api_service.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -374,13 +375,58 @@ class _LoginPageState extends State<LoginPage> {
                                         ],
                                       ),
                                       TextButton(
-                                        onPressed: () {
-                                          // TODO: 接入重置密码页面
+                                        onPressed: () async {
+                                          final controller = TextEditingController();
+
+                                          final input = await showDialog<String?>(
+                                            context: context,
+                                            builder: (ctx) {
+                                              return AlertDialog(
+                                                title: const Text('忘记密码'),
+                                                content: TextField(
+                                                  controller: controller,
+                                                  decoration: const InputDecoration(
+                                                    labelText: '用户名或手机号',
+                                                    hintText: '请输入你的登录账号或手机号',
+                                                  ),
+                                                ),
+                                                actions: [
+                                                  TextButton(
+                                                    onPressed: () => Navigator.of(ctx).pop(null),
+                                                    child: const Text('取消'),
+                                                  ),
+                                                  TextButton(
+                                                    onPressed: () =>
+                                                        Navigator.of(ctx).pop(controller.text.trim()),
+                                                    child: const Text('确定'),
+                                                  ),
+                                                ],
+                                              );
+                                            },
+                                          );
+
+                                          if (input == null || input.isEmpty) return;
+
+                                          try {
+                                            final auth = Provider.of<AuthProvider>(context, listen: false);
+                                            final msg = await auth.requestPasswordReset(input);
+
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              SnackBar(content: Text(msg)),
+                                            );
+                                          } on ApiException catch (e) {
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              SnackBar(content: Text(e.message)),
+                                            );
+                                          } catch (e) {
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              SnackBar(content: Text('请求失败：$e')),
+                                            );
+                                          }
                                         },
                                         child: const Text(
                                           '忘记密码？',
-                                          style:
-                                              TextStyle(color: Colors.grey),
+                                          style: TextStyle(color: Colors.grey),
                                         ),
                                       ),
                                     ],

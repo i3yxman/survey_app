@@ -98,6 +98,14 @@ class AccountPage extends StatelessWidget {
                   ),
                   const Divider(height: 0),
                   ListTile(
+                    leading: const Icon(Icons.lock_reset),
+                    title: const Text('修改密码'),
+                    onTap: () {
+                      Navigator.pushNamed(context, '/change-password');
+                    },
+                  ),
+                  const Divider(height: 0),
+                  ListTile(
                     leading: const Icon(Icons.logout),
                     title: const Text('退出登录'),
                     onTap: () => _onLogoutPressed(context),

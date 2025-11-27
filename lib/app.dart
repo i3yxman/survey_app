@@ -8,7 +8,9 @@ import 'screens/login/login_page.dart';
 import 'screens/home/home_page.dart';
 import 'screens/assignments/assignment_detail_page.dart';
 import 'screens/assignments/survey_fill_page.dart';
-import 'screens/splash/splash_page.dart';   // ⭐ 新增：引入启动页
+import 'screens/splash/splash_page.dart';
+import 'screens/login/forgot_password_page.dart';
+import 'screens/account/change_password_page.dart';
 import 'providers/auth_provider.dart';
 import 'providers/assignment_provider.dart';
 import 'providers/job_postings_provider.dart';
@@ -42,6 +44,8 @@ class MyApp extends StatelessWidget {
           '/home': (_) => const HomePage(),
           '/assignment-detail': (context) => const AssignmentDetailPage(),
           '/survey-fill': (context) => const SurveyFillPage(),
+          '/forgot-password': (_) => const ForgotPasswordPage(),
+          '/change-password': (_) => const ChangePasswordPage(),
         },
       ),
     );
