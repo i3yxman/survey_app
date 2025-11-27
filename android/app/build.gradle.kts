@@ -7,7 +7,9 @@ plugins {
 
 android {
     namespace = "com.example.survey_app"
-    compileSdk = flutter.compileSdkVersion
+
+    // 👇 这里改成固定数值（建议 34，也可以用你当前 Flutter SDK 对应的版本）
+    compileSdk = 34
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -20,12 +22,14 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.example.survey_app"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+
+        // 👇 这里改：至少 21，满足 wechat_assets_picker 的要求
+        minSdk = 21
+
+        // 👇 这里也改成明确值（建议和 compileSdk 对应，比如 34）
+        targetSdk = 34
+
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }

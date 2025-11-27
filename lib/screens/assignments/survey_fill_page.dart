@@ -1,16 +1,16 @@
 // lib/screens/assignments/survey_fill_page.dart
 
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:video_player/video_player.dart';
 import 'dart:typed_data';
 import 'package:video_thumbnail/video_thumbnail.dart';
+
+import 'package:wechat_assets_picker/wechat_assets_picker.dart';
 
 import '../../models/api_models.dart';
 import '../../services/api_service.dart';
 
 import 'dart:io';
-import 'dart:math' as math;
 
 class _PendingUpload {
   final String path;       // 本地文件路径
@@ -73,8 +73,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
   // 是否存在正在上传媒体的题目
   bool get _hasUploadingMedia =>
       _answers.values.any((d) => d.isUploadingMedia);
-
-  final ImagePicker _picker = ImagePicker();
 
   @override
   void didChangeDependencies() {
@@ -359,136 +357,37 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     }
   }
 
-  /// 底部弹出选择：相机 / 相册
-  Future<ImageSource?> _pickSource() async {
-    return showModalBottomSheet<ImageSource>(
-      context: context,
-      builder: (ctx) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.photo_camera_outlined),
-                title: const Text('拍摄'),
-                onTap: () => Navigator.of(ctx).pop(ImageSource.camera),
-              ),
-              ListTile(
-                leading: const Icon(Icons.photo_library_outlined),
-                title: const Text('从相册选择'),
-                onTap: () => Navigator.of(ctx).pop(ImageSource.gallery),
-              ),
-            ],
-          ),
-        );
-      },
+  /// 使用 wechat_assets_picker 选择图片或视频（支持多选）
+  Future<List<AssetEntity>?> _pickAssetsByType(String mediaType) {
+    final RequestType requestType =
+        mediaType == 'image' ? RequestType.image : RequestType.video;
+
+    return AssetPicker.pickAssets(
+      context,
+      pickerConfig: AssetPickerConfig(
+        requestType: requestType,
+        maxAssets: 20, // 这里可以根据需求调，比如最多一次选 20 个
+        // 也可以加上 themeColor/textDelegate 等个性化配置
+      ),
     );
   }
 
-  /// 显示一个简单的全屏“正在处理视频”弹窗
-  void _showProcessingDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false, // 不允许点击空白关闭
-      builder: (_) {
-        return Container(
-          color: Colors.black54,
-          child: const Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(color: Colors.white),
-                SizedBox(height: 16),
-                Text(
-                  '正在处理视频，请稍候…',
-                  style: TextStyle(color: Colors.white, fontSize: 16),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  /// 关闭“正在处理视频”弹窗
-  void _hideProcessingDialog() {
-    if (Navigator.of(context).canPop()) {
-      Navigator.of(context).pop();
-    }
-  }
-
-  /// 选择并上传媒体
-  /// - 图片：相册支持多选，拍照单张
-  /// - 视频：目前一次一段（可以多次点按钮）
-  /// - 选择后先弹出“上传确认”对话框，再开始上传
-  /// - 上传时会显示整体进度条
-  Future<void> _pickAndUploadMedia(
+  /// 把从 wechat_assets_picker 选到的 AssetEntity 顺序上传（一个完成再下一个）
+  Future<void> _uploadPickedAssets(
     QuestionDto q,
     AnswerDraft draft,
     String mediaType,
+    List<AssetEntity> assets,
   ) async {
-    if (_isReadOnly) return;
+    if (assets.isEmpty) return;
 
-    final source = await _pickSource();
-    if (source == null) return;
-
-    // 1. 选文件（图片相册支持多选）
-    List<XFile> pickedFiles = [];
-
-    try {
-      if (mediaType == 'image') {
-        if (source == ImageSource.gallery) {
-          // 相册多选图片
-          final files = await _picker.pickMultiImage(
-            imageQuality: 85,
-          );
-          pickedFiles = files;
-        } else {
-          // 拍照单张
-          final single = await _picker.pickImage(
-            source: source,
-            imageQuality: 85,
-          );
-          if (single != null) {
-            pickedFiles = [single];
-          }
-        }
-      } else {
-        // 视频目前 image_picker 只支持单选
-        // ⭐ 选视频时，先显示一个“正在处理视频”的全屏遮罩
-        _showProcessingDialog();
-        try {
-          final single = await _picker.pickVideo(
-            source: source,
-            maxDuration: const Duration(seconds: 60),
-          );
-          if (single != null) {
-            pickedFiles = [single];
-          }
-        } finally {
-          // ⭐ 不管成功/失败/取消，都把“正在处理视频”的弹窗关掉
-          _hideProcessingDialog();
-        }
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('打开相机/相册失败：$e')),
-      );
-      return;
-    }
-
-    // 用户取消选择
-    if (pickedFiles.isEmpty) return;
-
-    // 2. 选择完之后，弹出“是否上传”对话框，有一个上传按钮
+    // 1. 选择完之后，弹出“是否上传”对话框，有一个上传按钮
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) {
         return AlertDialog(
           title: Text(mediaType == 'image' ? '上传图片' : '上传视频'),
-          content: Text('已选择 ${pickedFiles.length} 个文件，是否立即上传？'),
+          content: Text('已选择 ${assets.length} 个文件，是否立即上传？'),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
@@ -505,22 +404,23 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
 
     if (confirmed != true) return;
 
-    // 3. 开始上传：
-    //    先标记该题目处于“正在上传”状态
+    // 2. 标记该题目处于“正在上传”状态
     setState(() {
       draft.isUploadingMedia = true;
       _pendingUploads.putIfAbsent(q.id, () => []);
     });
 
-    final totalFiles = pickedFiles.length;
+    final uploadedDtos = <MediaFileDto>[];
     int successFiles = 0;
 
     try {
-      // 先准备一个列表，收集这次成功上传的所有 dto
-      final uploadedDtos = <MediaFileDto>[];
-
-      for (var i = 0; i < totalFiles; i++) {
-        final file = pickedFiles[i];
+      for (final asset in assets) {
+        // 从 AssetEntity 拿到实际 File
+        final file = await asset.file;
+        if (file == null) {
+          // 某些异常情况可能拿不到 file，直接跳过这个文件
+          continue;
+        }
 
         // 为当前文件创建一个“正在上传”的本地缩略图项
         final pending = _PendingUpload(
@@ -534,7 +434,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
         });
 
         final bytes = await file.readAsBytes();
-        final filename = file.name;
+        final filename = file.path.split('/').last;
 
         final dto = await ApiService().uploadMedia(
           questionId: q.id,
@@ -545,10 +445,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
             if (!mounted || totalBytes == 0) return;
             final p = sent / totalBytes;
 
-            debugPrint('upload progress: $sent / $totalBytes -> $p');
-
             setState(() {
-              // 一直更新这个 pending 的进度
               pending.progress = p.clamp(0.0, 1.0);
             });
           },
@@ -556,19 +453,18 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
 
         if (!mounted) return;
 
-        // 这里只记录起来，不立刻把 pending 删掉、也不立刻把 dto 加到 UI 里
         uploadedDtos.add(dto);
         successFiles++;
       }
 
       if (!mounted) return;
 
-      // ⭐⭐ 所有文件都上传成功以后，再一次性更新 UI：
+      // 3. 所有文件都上传成功后，一次性更新 UI：
       setState(() {
-        // 1) 清掉这个题目下面所有“正在上传”的本地缩略图
+        // 清掉这个题目下面所有“正在上传”的缩略图
         _pendingUploads.remove(q.id);
 
-        // 2) 把这次成功上传的所有 dto 一次性加到已上传列表里
+        // 把这次成功上传的所有 dto 一次性加到已上传列表里
         for (final dto in uploadedDtos) {
           _mediaCache[dto.id] = dto;
           draft.mediaFileIds.add(dto.id);
@@ -587,7 +483,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
-        // ❗ 失败：清掉这个题目下面所有“正在上传”的缩略图
         _pendingUploads.remove(q.id);
       });
       ScaffoldMessenger.of(context).showSnackBar(
@@ -608,6 +503,27 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
         });
       }
     }
+  }
+
+  /// 选择并上传媒体（使用 wechat_assets_picker，多选）
+  /// - 图片：多选图片
+  /// - 视频：多选视频
+  /// - 选择后先弹出“上传确认”对话框，再开始顺序上传
+  Future<void> _pickAndUploadMedia(
+    QuestionDto q,
+    AnswerDraft draft,
+    String mediaType,
+  ) async {
+    if (_isReadOnly) return;
+
+    // 直接打开微信风格的多选相册
+    final assets = await _pickAssetsByType(mediaType);
+
+    // 用户取消选择
+    if (assets == null || assets.isEmpty) return;
+
+    // 用统一的上传逻辑顺序上传
+    await _uploadPickedAssets(q, draft, mediaType, assets);
   }
 
   /// 根据若干媒体 ID，确保它们已经加载到 _mediaCache 里

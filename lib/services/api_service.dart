@@ -53,6 +53,7 @@ class ApiService {
 
   /// 登录接口（POST /api/accounts/login/）
   Future<LoginResult> login(String username, String password) async {
+    debugPrint('>>> Env.apiBaseUrl = ${Env.apiBaseUrl}');
     final url = Uri.parse('${Env.apiBaseUrl}/api/accounts/login/');
 
     final resp = await http.post(
