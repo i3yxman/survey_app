@@ -6,11 +6,93 @@ import 'dart:typed_data';
 import 'package:video_thumbnail/video_thumbnail.dart';
 
 import 'package:wechat_assets_picker/wechat_assets_picker.dart';
+import 'package:photo_manager/photo_manager.dart';
 
 import '../../models/api_models.dart';
 import '../../services/api_service.dart';
 
 import 'dart:io';
+
+/// 自定义中文文案，让底部按钮和提示都显示中文
+class _ChinesePickerTextDelegate extends AssetPickerTextDelegate {
+  const _ChinesePickerTextDelegate();
+
+  /// 固定为中文
+  @override
+  String get languageCode => 'zh';
+
+  // 底部主按钮
+  @override
+  String get confirm => '确认';
+
+  @override
+  String get cancel => '取消';
+
+  @override
+  String get preview => '预览';
+
+  @override
+  String get select => '选择';
+
+  @override
+  String get selectMore => '继续选择';
+
+  @override
+  String get emptyList => '暂无内容';
+
+  @override
+  String get viewing => '正在查看';
+
+  @override
+  String get original => '原图';
+
+  // 下面这些是权限相关 & 各种小提示，可以按需要改
+  @override
+  String get unableToAccessAll => '无法访问所有照片';
+
+  @override
+  String get viewingLimitedAssetsTip =>
+      '应用当前只能访问部分照片，如需完整访问，请前往系统设置修改权限。';
+
+  @override
+  String get changeAccessibleLimitedAssets => '管理可访问的照片';
+
+  @override
+  String get accessAllTip => '允许访问“所有照片”以完整选择图片和视频。';
+
+  @override
+  String get goToSystemSettings => '前往系统设置';
+
+  @override
+  String get accessLimitedAssets => '保持有限访问';
+
+  @override
+  String get accessiblePathName => '可访问的资源';
+
+  @override
+  String get sTypeImageLabel => '图片';
+
+  @override
+  String get sTypeVideoLabel => '视频';
+
+  @override
+  String get sTypeAudioLabel => '音频';
+
+  @override
+  String get sTypeOtherLabel => '其他';
+
+  @override
+  String get loadFailed => '加载失败';
+
+  @override
+  String get durationLabel => '时长';
+
+  @override
+  String get edit => '编辑';
+
+  @override
+  String get gifIndicator => 'GIF';
+}
 
 class _PendingUpload {
   final String path;       // 本地文件路径
@@ -85,23 +167,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
 
     _loadQuestionnaireAndSubmission();
   }
-
-/// 自定义中文文案，让底部按钮显示中文（包含 Confirm 按钮）
-class _ChinesePickerTextDelegate extends AssetPickerTextDelegate {
-  const _ChinesePickerTextDelegate();
-
-  @override
-  String get confirm => '确认';
-
-  // 如果你想把其它文案也改成中文，可以按需继续覆盖：
-  // @override
-  // String get cancel => '取消';
-  //
-  // @override
-  // String get preview => '预览';
-  //
-  // 这里先只改 confirm，其他用默认就好。
-}
 
   /// 找出所有指向某题的逻辑（谁的 outgoing_logics 里 goto_question == q.id）
   List<QuestionLogicDto> _getIncomingLogics(QuestionDto q) {
@@ -373,33 +438,33 @@ class _ChinesePickerTextDelegate extends AssetPickerTextDelegate {
     }
   }
 
-  /// 使用 wechat_assets_picker 选择图片或视频（支持多选）
-  Future<List<AssetEntity>?> _pickAssetsByType(String mediaType) {
-    final RequestType requestType =
-        mediaType == 'image' ? RequestType.image : RequestType.video;
+/// 使用 wechat_assets_picker 选择图片或视频（支持多选）
+/// 这里做两件事：
+/// 1）根据题目类型只加载对应的资源（图片题只显示图片，视频题只显示视频）
+/// 2）把所有文案固定成中文
+Future<List<AssetEntity>?> _pickAssetsByType(String mediaType) {
+  final bool pickImage = mediaType == 'image';
 
-    return AssetPicker.pickAssets(
-      context,
-      pickerConfig: AssetPickerConfig(
-        requestType: requestType,
-        maxAssets: 20,
-
-        /// 进一步限制：图片题只能选图片，视频题只能选视频
-        selectPredicate: (asset, isSelected) {
-          if (mediaType == 'image') {
-            // 只有图片可以被选中
-            return asset.type == AssetType.image;
-          } else {
-            // 只有视频可以被选中
-            return asset.type == AssetType.video;
-          }
-        },
-
-        /// 把底部右下角按钮文案等统一切成中文
-        textDelegate: const _ChinesePickerTextDelegate(),
-      ),
+  // 只保留一种资源类型的筛选规则
+  final filterOptions = FilterOptionGroup()
+    ..setOption(
+      pickImage ? AssetType.image : AssetType.video,
+      const FilterOption(), // 使用默认筛选配置即可
     );
-  }
+
+  final RequestType requestType =
+      pickImage ? RequestType.image : RequestType.video;
+
+  return AssetPicker.pickAssets(
+    context,
+    pickerConfig: AssetPickerConfig(
+      requestType: requestType,
+      maxAssets: 20,
+      filterOptions: filterOptions,              // ⭐ 关键：只加载一种类型
+      textDelegate: const _ChinesePickerTextDelegate(), // ⭐ 关键：全中文文案
+    ),
+  );
+}
 
   /// 把从 wechat_assets_picker 选到的 AssetEntity 顺序上传（一个完成再下一个）
   Future<void> _uploadPickedAssets(
