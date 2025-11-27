@@ -86,6 +86,22 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     _loadQuestionnaireAndSubmission();
   }
 
+/// 自定义中文文案，让底部按钮显示中文（包含 Confirm 按钮）
+class _ChinesePickerTextDelegate extends AssetPickerTextDelegate {
+  const _ChinesePickerTextDelegate();
+
+  @override
+  String get confirm => '确认';
+
+  // 如果你想把其它文案也改成中文，可以按需继续覆盖：
+  // @override
+  // String get cancel => '取消';
+  //
+  // @override
+  // String get preview => '预览';
+  //
+  // 这里先只改 confirm，其他用默认就好。
+}
 
   /// 找出所有指向某题的逻辑（谁的 outgoing_logics 里 goto_question == q.id）
   List<QuestionLogicDto> _getIncomingLogics(QuestionDto q) {
@@ -366,8 +382,21 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
       context,
       pickerConfig: AssetPickerConfig(
         requestType: requestType,
-        maxAssets: 20, // 这里可以根据需求调，比如最多一次选 20 个
-        // 也可以加上 themeColor/textDelegate 等个性化配置
+        maxAssets: 20,
+
+        /// 进一步限制：图片题只能选图片，视频题只能选视频
+        selectPredicate: (asset, isSelected) {
+          if (mediaType == 'image') {
+            // 只有图片可以被选中
+            return asset.type == AssetType.image;
+          } else {
+            // 只有视频可以被选中
+            return asset.type == AssetType.video;
+          }
+        },
+
+        /// 把底部右下角按钮文案等统一切成中文
+        textDelegate: const _ChinesePickerTextDelegate(),
       ),
     );
   }
