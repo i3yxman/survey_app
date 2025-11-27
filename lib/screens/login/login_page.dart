@@ -221,7 +221,7 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        '登录后即可查看当前任务和任务大厅',
+                        '使用平台账号登录即可查看个人任务、任务大厅等内容',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: theme.textTheme.bodySmall?.color
                               ?.withOpacity(0.65),

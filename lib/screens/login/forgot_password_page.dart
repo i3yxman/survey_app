@@ -3,9 +3,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../services/api_service.dart';
-import '../../models/api_models.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/api_service.dart';
 
 class ForgotPasswordPage extends StatefulWidget {
   const ForgotPasswordPage({super.key});
@@ -38,21 +37,19 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
     });
 
     try {
-      // 这里直接用 ApiService，你也可以封到 AuthProvider 里
-      final api = ApiService();
-      final detail = await api.requestPasswordReset(
-        usernameOrPhone: identifier,
-      );
+      // ✅ 改成走 AuthProvider，而不是自己 new ApiService
+      final auth = context.read<AuthProvider>();
+      final detail = await auth.requestPasswordReset(identifier);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(detail)),
       );
-      Navigator.pop(context);
+      Navigator.pop(context); // 返回登录页
     } on ApiException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('重置失败：${e.message}')),
+        SnackBar(content: Text(e.message)),
       );
     } catch (e) {
       if (!mounted) return;
@@ -84,7 +81,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '请输入绑定的手机号或用户名，我们会帮你重置密码。',
+                '请输入绑定的手机号或用户名，我们会向平台管理员提交一条重置申请。',
                 style: theme.textTheme.bodyMedium,
               ),
               const SizedBox(height: 24),
@@ -121,7 +118,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
               const Divider(),
               const SizedBox(height: 8),
               Text(
-                '如果你没有绑定手机号或无法接收验证码，请联系平台管理员人工重置密码。',
+                '管理员审核后会通过企业微信、电话或其他方式联系你完成重置。',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.textTheme.bodySmall?.color?.withOpacity(0.7),
                 ),

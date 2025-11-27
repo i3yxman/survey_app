@@ -146,9 +146,9 @@ class ApiService {
     }
   }
 
-  /// 忘记密码：提交用户名/手机号，请后端给出下一步提示
+  /// 忘记密码：提交账号标识（用户名 / 手机），让后端返回下一步提示
   Future<String> requestPasswordReset({
-    required String usernameOrPhone,
+    required String identifier,
   }) async {
     final url = Uri.parse('${Env.apiBaseUrl}/api/accounts/forgot-password/');
 
@@ -159,8 +159,8 @@ class ApiService {
         'Content-Type': 'application/json',
       },
       body: jsonEncode({
-        // ✅ 这里改成后端期望的字段名
-        'identifier': usernameOrPhone,
+        // 👈 和后端 ForgotPasswordSerializer.identifier 对齐
+        'identifier': identifier,
       }),
     );
 
@@ -170,13 +170,20 @@ class ApiService {
       try {
         final data = jsonDecode(resp.body);
         if (data is Map<String, dynamic>) {
+          // 1）优先用 detail
           if (data['detail'] is String) {
             msg = data['detail'] as String;
-          }
-          // 也兼容字段错误提示，比如 {"identifier":["未找到该账号"]}
-          else if (data['identifier'] is List &&
-              (data['identifier'] as List).isNotEmpty) {
-            msg = (data['identifier'] as List).first.toString();
+          } else {
+            // 2）再从字段错误里抓一条人话
+            for (final value in data.values) {
+              if (value is List && value.isNotEmpty) {
+                msg = value.first.toString();
+                break;
+              } else if (value is String) {
+                msg = value;
+                break;
+              }
+            }
           }
         }
       } catch (_) {}
@@ -184,7 +191,7 @@ class ApiService {
       throw ApiException(msg);
     }
 
-    // 成功时返回后端给的 detail 文案（比如“账号 xxx 已找到，如需重置请联系管理员”）
+    // 成功时返回后端给的 detail 文案（比如“系统已记录你的请求，请联系管理员 XXX”）
     try {
       final data = jsonDecode(resp.body);
       if (data is Map<String, dynamic> && data['detail'] is String) {

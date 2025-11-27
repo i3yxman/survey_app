@@ -102,15 +102,15 @@ class AuthProvider extends ChangeNotifier {
   }
 
   /// 忘记密码：让后端给出下一步提示（不改 loading / error，直接抛异常）
-  Future<String> requestPasswordReset(String usernameOrPhone) async {
-    final trimmed = usernameOrPhone.trim();
+  Future<String> requestPasswordReset(String identifier) async {
+    final trimmed = identifier.trim();
     if (trimmed.isEmpty) {
       throw ApiException('请输入用户名或手机号');
     }
 
     try {
       final msg = await _api.requestPasswordReset(
-        usernameOrPhone: trimmed,
+        identifier: trimmed, // 👈 和 ApiService 参数名对齐
       );
       return msg;
     } on ApiException catch (e) {
