@@ -3,9 +3,10 @@
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import 'dart:typed_data';
-import 'package:video_thumbnail/video_thumbnail.dart';
+import 'package:video_thumbnail/video_thumbnail.dart' as vt;
 
 import 'package:wechat_assets_picker/wechat_assets_picker.dart';
+import 'package:wechat_camera_picker/wechat_camera_picker.dart';
 import 'package:photo_manager/photo_manager.dart';
 
 import '../../models/api_models.dart';
@@ -438,33 +439,51 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     }
   }
 
-/// 使用 wechat_assets_picker 选择图片或视频（支持多选）
-/// 这里做两件事：
-/// 1）根据题目类型只加载对应的资源（图片题只显示图片，视频题只显示视频）
-/// 2）把所有文案固定成中文
-Future<List<AssetEntity>?> _pickAssetsByType(String mediaType) {
-  final bool pickImage = mediaType == 'image';
 
-  // 只保留一种资源类型的筛选规则
-  final filterOptions = FilterOptionGroup()
-    ..setOption(
-      pickImage ? AssetType.image : AssetType.video,
-      const FilterOption(), // 使用默认筛选配置即可
+  /// 使用相机拍摄一张照片或一段视频
+  Future<AssetEntity?> _captureMediaByType(String mediaType) async {
+    final bool isImage = mediaType == 'image';
+
+    final config = CameraPickerConfig(
+      enableRecording: !isImage,      // 图片题：不启用录像；视频题：启用录像
+      onlyEnableRecording: !isImage,  // 视频题：只录制视频，不拍照
+      enableAudio: !isImage,          // 视频需要声音
+      // 你如果想全部中文可以另外自定义 textDelegate，这里先用默认即可
     );
 
-  final RequestType requestType =
-      pickImage ? RequestType.image : RequestType.video;
+    final AssetEntity? entity = await CameraPicker.pickFromCamera(
+      context,
+      pickerConfig: config,
+    );
 
-  return AssetPicker.pickAssets(
-    context,
-    pickerConfig: AssetPickerConfig(
-      requestType: requestType,
-      maxAssets: 20,
-      filterOptions: filterOptions,              // ⭐ 关键：只加载一种类型
-      textDelegate: const _ChinesePickerTextDelegate(), // ⭐ 关键：全中文文案
-    ),
-  );
-}
+    return entity;
+  }
+
+  /// 使用 wechat_assets_picker 选择图片或视频（支持多选）
+  /// 根据 mediaType 只显示图片或视频，并统一中文文案
+  Future<List<AssetEntity>?> _pickAssetsByType(String mediaType) {
+    final bool pickImage = mediaType == 'image';
+
+    // 只保留一种资源类型的筛选规则
+    final filterOptions = FilterOptionGroup()
+      ..setOption(
+        pickImage ? AssetType.image : AssetType.video,
+        const FilterOption(), // 使用默认筛选配置即可
+      );
+
+    final RequestType requestType =
+        pickImage ? RequestType.image : RequestType.video;
+
+    return AssetPicker.pickAssets(
+      context,
+      pickerConfig: AssetPickerConfig(
+        requestType: requestType,
+        maxAssets: 20,
+        filterOptions: filterOptions,                      // ⭐ 只加载一种类型
+        textDelegate: const _ChinesePickerTextDelegate(), // ⭐ 全中文文案
+      ),
+    );
+  }
 
   /// 把从 wechat_assets_picker 选到的 AssetEntity 顺序上传（一个完成再下一个）
   Future<void> _uploadPickedAssets(
@@ -599,22 +618,74 @@ Future<List<AssetEntity>?> _pickAssetsByType(String mediaType) {
     }
   }
 
-  /// 选择并上传媒体（使用 wechat_assets_picker，多选）
-  /// - 图片：多选图片
-  /// - 视频：多选视频
-  /// - 选择后先弹出“上传确认”对话框，再开始顺序上传
+  /// 选择并上传媒体：
+  /// - 先让用户选「拍摄」还是「从相册选择」
+  /// - 拍摄：打开相机，只返回 1 个资源
+  /// - 相册：打开 wechat_assets_picker，多选
   Future<void> _pickAndUploadMedia(
     QuestionDto q,
     AnswerDraft draft,
     String mediaType,
   ) async {
-    if (_isReadOnly) return;
+    if (_isReadOnly || draft.isUploadingMedia) return;
 
-    // 直接打开微信风格的多选相册
-    final assets = await _pickAssetsByType(mediaType);
+    // 先弹一个底部菜单，让用户选择来源
+    final String? choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: Icon(
+                  mediaType == 'image' ? Icons.photo_camera : Icons.videocam,
+                ),
+                title: Text(
+                  mediaType == 'image' ? '拍照上传' : '拍摄视频上传',
+                ),
+                onTap: () => Navigator.of(ctx).pop('camera'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library),
+                title: Text(
+                  mediaType == 'image' ? '从相册选择图片' : '从相册选择视频',
+                ),
+                onTap: () => Navigator.of(ctx).pop('gallery'),
+              ),
+              const Divider(height: 0),
+              ListTile(
+                leading: const Icon(Icons.close),
+                title: const Text('取消'),
+                onTap: () => Navigator.of(ctx).pop(null),
+              ),
+            ],
+          ),
+        );
+      },
+    );
 
-    // 用户取消选择
-    if (assets == null || assets.isEmpty) return;
+    // 用户取消
+    if (choice == null) return;
+
+    List<AssetEntity> assets = [];
+
+    if (choice == 'camera') {
+      // 用相机拍一张照片 / 录一段视频
+      final entity = await _captureMediaByType(mediaType);
+      if (entity != null) {
+        assets = [entity];
+      }
+    } else if (choice == 'gallery') {
+      // 从相册选择
+      final picked = await _pickAssetsByType(mediaType);
+      if (picked != null && picked.isNotEmpty) {
+        assets = picked;
+      }
+    }
+
+    // 最终如果什么都没有，就直接返回
+    if (assets.isEmpty) return;
 
     // 用统一的上传逻辑顺序上传
     await _uploadPickedAssets(q, draft, mediaType, assets);
@@ -659,11 +730,11 @@ Future<List<AssetEntity>?> _pickAssetsByType(String mediaType) {
     }
 
     try {
-      final bytes = await VideoThumbnail.thumbnailData(
+      final bytes = await vt.VideoThumbnail.thumbnailData(
         video: videoUrl,
-        imageFormat: ImageFormat.JPEG,
-        maxWidth: 300, // 缩略图最大宽度
-        quality: 75,   // 质量 0-100
+        imageFormat: vt.ImageFormat.JPEG,
+        maxWidth: 300,
+        quality: 75,
       );
 
       if (bytes != null) {
