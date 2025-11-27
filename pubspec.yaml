@@ -46,6 +46,8 @@ dependencies:
   provider: ^6.1.2
   dio: ^5.4.0
   wechat_assets_picker: ^10.0.0
+  local_auth: ^2.3.0 # 面容ID / 指纹 / 生物识别
+  flutter_secure_storage: ^9.0.0 # 安全保存账号密码
 
 dev_dependencies:
   flutter_test:

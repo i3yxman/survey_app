@@ -53,7 +53,6 @@ class ApiService {
 
   /// 登录接口（POST /api/accounts/login/）
   Future<LoginResult> login(String username, String password) async {
-    debugPrint('>>> Env.apiBaseUrl = ${Env.apiBaseUrl}');
     final url = Uri.parse('${Env.apiBaseUrl}/api/accounts/login/');
 
     final resp = await http.post(
@@ -246,15 +245,11 @@ class ApiService {
 
       return MediaFileDto.fromJson(data as Map<String, dynamic>);
     } on DioException catch (e, stack) {
-      debugPrint('Dio upload error: $e');
-      debugPrint('Dio upload stack: $stack');
 
       final status = e.response?.statusCode;
       final body = e.response?.data;
       throw ApiException('上传媒体失败: $status $body');
     } catch (e, stack) {
-      debugPrint('Unknown upload error: $e');
-      debugPrint('Unknown upload stack: $stack');
       throw ApiException('上传媒体失败: $e');
     }
   }

@@ -1,6 +1,8 @@
 // lib/screens/home/home_page.dart
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../providers/auth_provider.dart';
 
 import '../assignments/my_assignments_page.dart';
 import '../job_postings/job_postings_page.dart';
@@ -26,6 +28,14 @@ class _HomePageState extends State<HomePage> {
       JobPostingsPage(),
       AccountPage(),
     ];
+
+    // 兜底：没登录，直接跳回登录页
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final auth = Provider.of<AuthProvider>(context, listen: false);
+      if (!auth.isLoggedIn) {
+        Navigator.pushReplacementNamed(context, '/login');
+      }
+    });
   }
 
   @override
