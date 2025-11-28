@@ -386,6 +386,68 @@ class ApiService {
         .toList();
   }
 
+  /// ================== 提交对话（审核沟通）相关接口 ==================
+
+  /// 获取某个 submission 的对话列表（审核沟通 + 系统消息）
+  Future<List<SubmissionCommentDto>> fetchSubmissionComments(int submissionId) async {
+    final url = Uri.parse(
+      '${Env.apiBaseUrl}/api/assignments/submissions/$submissionId/comments/',
+    );
+
+    final resp = await _client.get(
+      url,
+      headers: {
+        'Authorization': _authBasic ?? '',
+        'Content-Type': 'application/json',
+      },
+    );
+
+    if (resp.statusCode != 200) {
+      throw ApiException(
+        '获取提交对话失败: ${resp.statusCode} ${resp.body}',
+      );
+    }
+
+    final data = jsonDecode(resp.body);
+    if (data is! List) {
+      throw ApiException('获取提交对话失败：返回格式错误');
+    }
+
+    return data
+        .map((e) => SubmissionCommentDto.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// 给某个 submission 发表一条评论（评估员或审核员都用这个接口）
+  Future<SubmissionCommentDto> createSubmissionComment({
+    required int submissionId,
+    required String message,
+  }) async {
+    final url = Uri.parse(
+      '${Env.apiBaseUrl}/api/assignments/submissions/$submissionId/comments/',
+    );
+
+    final resp = await _client.post(
+      url,
+      headers: {
+        'Authorization': _authBasic ?? '',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'message': message,
+      }),
+    );
+
+    if (resp.statusCode != 201) {
+      throw ApiException(
+        '发表评论失败: ${resp.statusCode} ${resp.body}',
+      );
+    }
+
+    final data = jsonDecode(resp.body) as Map<String, dynamic>;
+    return SubmissionCommentDto.fromJson(data);
+  }
+
   /// 取消任务（两阶段）
   Future<CancelAssignmentResponse> cancelAssignment({
     required int assignmentId,

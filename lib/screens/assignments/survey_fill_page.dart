@@ -14,6 +14,8 @@ import '../../services/api_service.dart';
 
 import 'dart:io';
 
+import 'submission_comments_page.dart';
+
 /// 自定义中文文案，让底部按钮和提示都显示中文
 class _ChinesePickerTextDelegate extends AssetPickerTextDelegate {
   const _ChinesePickerTextDelegate();
@@ -1392,8 +1394,9 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                     children: [
                       Expanded(
                         child: OutlinedButton(
-                          onPressed:
-                              (_savingDraft || _hasUploadingMedia) ? null : _saveDraft,
+                          onPressed: (_savingDraft || _hasUploadingMedia)
+                              ? null
+                              : _saveDraft,
                           child: _savingDraft
                               ? const SizedBox(
                                   width: 20,
@@ -1408,8 +1411,9 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: ElevatedButton(
-                          onPressed:
-                              (_submitting || _hasUploadingMedia) ? null : _submit,
+                          onPressed: (_submitting || _hasUploadingMedia)
+                              ? null
+                              : _submit,
                           child: _submitting
                               ? const SizedBox(
                                   width: 20,
@@ -1417,8 +1421,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2,
                                     valueColor:
-                                        AlwaysStoppedAnimation(
-                                            Colors.white),
+                                        AlwaysStoppedAnimation(Colors.white),
                                   ),
                                 )
                               : const Text('提交问卷'),
@@ -1432,12 +1435,50 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                   Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      _submissionStatus == 'draft'
-                          ? '当前状态：草稿（尚未提交）'
-                          : '当前状态：未保存',
+                      () {
+                        switch (_submissionStatus) {
+                          case 'draft':
+                            return '当前状态：草稿（尚未提交）';
+                          case 'submitted':
+                            return '当前状态：已提交（待审核）';
+                          case 'needs_revision':
+                            return '当前状态：待修改（请查看审核说明）';
+                          case 'resubmitted':
+                            return '当前状态：已重新提交（待审核）';
+                          case 'approved':
+                            return '当前状态：已通过审核';
+                          case 'cancelled':
+                            return '当前状态：已作废';
+                          default:
+                            return '当前状态：未保存';
+                        }
+                      }(),
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: Colors.grey,
                       ),
+                    ),
+                  ),
+                ],
+
+                // ⭐ 新增：只要有 submissionId，就允许查看审核沟通记录
+                if (_submissionId != null) ...[
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      icon: const Icon(Icons.chat_bubble_outline),
+                      label: const Text('查看审核沟通'),
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => SubmissionCommentsPage(
+                              submissionId: _submissionId!,
+                              title: _assignment.questionnaireTitle ?? '审核沟通',
+                              status: _submissionStatus,
+                            ),
+                          ),
+                        );
+                      },
                     ),
                   ),
                 ],

@@ -455,6 +455,54 @@ class MediaFileDto {
   }
 }
 
+class SubmissionCommentDto {
+  final int id;
+  final int submission;
+  final int author;
+  final String authorName;
+  final String role;      // "reviewer" / "evaluator"
+  final String message;
+  final String type;      // "normal" / "system"
+  final DateTime createdAt;
+
+  SubmissionCommentDto({
+    required this.id,
+    required this.submission,
+    required this.author,
+    required this.authorName,
+    required this.role,
+    required this.message,
+    required this.type,
+    required this.createdAt,
+  });
+
+  factory SubmissionCommentDto.fromJson(Map<String, dynamic> json) {
+    return SubmissionCommentDto(
+      id: json['id'] as int,
+      submission: json['submission'] as int,
+      author: json['author'] as int,
+      authorName: (json['author_name'] ?? '') as String,
+      role: json['role'] as String,
+      message: json['message'] as String,
+      type: json['type'] as String,
+      createdAt: DateTime.parse(json['created_at'] as String),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'submission': submission,
+      'author': author,
+      'author_name': authorName,
+      'role': role,
+      'message': message,
+      'type': type,
+      'created_at': createdAt.toIso8601String(),
+    };
+  }
+}
+
 /// 本地“答案草稿”模型（UI 层会用）
 class AnswerDraft {
   final int questionId;
