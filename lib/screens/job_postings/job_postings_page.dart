@@ -13,6 +13,7 @@ import '../../providers/location_provider.dart'; // ⭐ 新增
 import '../../services/api_service.dart';
 import '../../widgets/info_chip.dart';
 import '../../utils/location_utils.dart';
+import '../../utils/snackbar.dart';
 
 class JobPostingsPage extends StatefulWidget {
   const JobPostingsPage({super.key});
@@ -54,8 +55,7 @@ class _JobPostingsPageState extends State<JobPostingsPage> {
     Uri uri;
 
     if (Platform.isIOS) {
-      uri =
-          Uri.parse('http://maps.apple.com/?daddr=$lat,$lng&q=$encodedLabel');
+      uri = Uri.parse('http://maps.apple.com/?daddr=$lat,$lng&q=$encodedLabel');
     } else {
       uri = Uri.parse(
         'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng',
@@ -64,9 +64,7 @@ class _JobPostingsPageState extends State<JobPostingsPage> {
 
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('无法打开地图应用')),
-      );
+      showErrorSnackBar(context, '无法打开地图应用');
     }
   }
 
@@ -77,20 +75,14 @@ class _JobPostingsPageState extends State<JobPostingsPage> {
       await provider.apply(p.id);
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('申请已提交，请等待审核')),
-      );
+      showSuccessSnackBar(context, '申请已提交，请等待审核');
       await _refresh();
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message)),
-      );
+      showErrorSnackBar(context, e, fallback: '申请失败，请稍后重试');
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('申请出错：$e')),
-      );
+      showErrorSnackBar(context, e, fallback: '申请失败，请稍后再试');
     }
   }
 
@@ -123,20 +115,14 @@ class _JobPostingsPageState extends State<JobPostingsPage> {
       await provider.cancelApply(p.id);
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('申请已撤回')),
-      );
+      showSuccessSnackBar(context, '申请已撤回');
       await _refresh();
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message)),
-      );
+      showErrorSnackBar(context, e, fallback: '撤销失败，请稍后重试');
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('撤销出错：$e')),
-      );
+      showErrorSnackBar(context, e, fallback: '撤销失败，请稍后再试');
     }
   }
 
@@ -153,9 +139,7 @@ class _JobPostingsPageState extends State<JobPostingsPage> {
         child: Center(
           child: Text(
             '已关闭',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: Colors.grey,
-            ),
+            style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey),
           ),
         ),
       );
@@ -179,8 +163,10 @@ class _JobPostingsPageState extends State<JobPostingsPage> {
               onPressed: () => _handleCancelApply(p),
               style: OutlinedButton.styleFrom(
                 minimumSize: const Size(0, 32),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 4,
+                ),
                 side: BorderSide(color: theme.colorScheme.error),
                 foregroundColor: theme.colorScheme.error,
               ),
@@ -198,8 +184,7 @@ class _JobPostingsPageState extends State<JobPostingsPage> {
           onPressed: () => _handleApply(p),
           style: ElevatedButton.styleFrom(
             minimumSize: const Size(0, 32),
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
           ),
           child: const Text('申请任务'),
         ),
@@ -223,15 +208,12 @@ class _JobPostingsPageState extends State<JobPostingsPage> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    '加载任务大厅失败：${provider.error}',
+                    provider.error ?? '加载任务大厅失败，请稍后重试',
                     style: const TextStyle(color: Colors.red),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 12),
-                  ElevatedButton(
-                    onPressed: _refresh,
-                    child: const Text('重试'),
-                  ),
+                  ElevatedButton(onPressed: _refresh, child: const Text('重试')),
                 ],
               ),
             ),
@@ -267,11 +249,14 @@ class _JobPostingsPageState extends State<JobPostingsPage> {
 
               final storeLine =
                   p.storeAddress != null && p.storeAddress!.isNotEmpty
-                      ? '门店：${p.storeName ?? ''}（${p.storeAddress}）'
-                      : (p.storeName != null ? '门店：${p.storeName}' : null);
+                  ? '门店：${p.storeName ?? ''}（${p.storeAddress}）'
+                  : (p.storeName != null ? '门店：${p.storeName}' : null);
 
-              final distanceText =
-                  _formatDistance(loc, p.storeLatitude, p.storeLongitude);
+              final distanceText = _formatDistance(
+                loc,
+                p.storeLatitude,
+                p.storeLongitude,
+              );
 
               return Card(
                 child: Padding(

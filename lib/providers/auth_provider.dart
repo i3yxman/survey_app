@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/api_models.dart';
 import '../services/api_service.dart';
+import '../utils/error_message.dart';
 
 class AuthProvider extends ChangeNotifier {
   final ApiService _api;
@@ -53,10 +54,10 @@ class AuthProvider extends ChangeNotifier {
       _error = null; // 登录成功时确保错误清空
     } on ApiException catch (e) {
       _currentUser = null;
-      _error = e.message;
+      _error = userMessageFrom(e, fallback: '登录失败，请稍后重试');
     } catch (e) {
       _currentUser = null;
-      _error = '未知错误: $e';
+      _error = userMessageFrom(e, fallback: '登录失败，请稍后重试');
     } finally {
       _loading = false;
       notifyListeners();
@@ -85,16 +86,13 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await _api.changePassword(
-        oldPassword: oldTrim,
-        newPassword: newTrim,
-      );
+      await _api.changePassword(oldPassword: oldTrim, newPassword: newTrim);
       // 修改成功后，清空错误
       _error = null;
     } on ApiException catch (e) {
-      _error = e.message;
+      _error = userMessageFrom(e, fallback: '修改密码失败，请稍后重试');
     } catch (e) {
-      _error = '未知错误: $e';
+      _error = userMessageFrom(e, fallback: '修改密码失败，请稍后重试');
     } finally {
       _loading = false;
       notifyListeners();
@@ -105,19 +103,22 @@ class AuthProvider extends ChangeNotifier {
   Future<String> requestPasswordReset(String identifier) async {
     final trimmed = identifier.trim();
     if (trimmed.isEmpty) {
-      throw ApiException('请输入用户名或手机号');
+      // 直接抛 ApiException，外层用 showErrorSnackBar(e) 即可
+      throw ApiException(userMessage: '请输入用户名或手机号');
     }
 
     try {
-      final msg = await _api.requestPasswordReset(
-        identifier: trimmed, // 👈 和 ApiService 参数名对齐
-      );
+      final msg = await _api.requestPasswordReset(identifier: trimmed);
       return msg;
     } on ApiException catch (e) {
-      // 直接把后端的人话抛出去
-      throw ApiException(e.message);
+      // ApiService 已经封装成“人话”了，直接抛出去
+      rethrow;
     } catch (e) {
-      throw ApiException('请求失败: $e');
+      // 包一层 ApiException，保证外层永远拿到 ApiException
+      throw ApiException(
+        userMessage: userMessageFrom(e, fallback: '请求失败，请稍后重试'),
+        body: e.toString(),
+      );
     }
   }
 

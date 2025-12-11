@@ -4,13 +4,14 @@ import 'package:flutter/foundation.dart';
 
 import '../models/api_models.dart';
 import '../repositories/job_posting_repository.dart';
+import '../utils/error_message.dart';
 
 /// “任务大厅” Provider
 class JobPostingsProvider extends ChangeNotifier {
   final JobPostingRepository _repo;
 
   JobPostingsProvider({JobPostingRepository? repo})
-      : _repo = repo ?? JobPostingRepository();
+    : _repo = repo ?? JobPostingRepository();
 
   bool _isLoading = false;
   String? _error;
@@ -37,8 +38,8 @@ class JobPostingsProvider extends ChangeNotifier {
       final list = await _repo.fetchJobPostings();
       _jobPostings = list;
     } catch (e) {
-      _error = e.toString();
       _jobPostings = [];
+      _error = userMessageFrom(e, fallback: '加载任务大厅失败，请稍后重试');
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -52,7 +53,8 @@ class JobPostingsProvider extends ChangeNotifier {
       // 成功后重新拉一遍列表，保持 UI 最新
       await loadJobPostings();
     } catch (e) {
-      _error = e.toString();
+      // 存一份“人话”在 provider.error，方便调试 / 显示
+      _error = userMessageFrom(e, fallback: '申请任务失败，请稍后重试');
       notifyListeners();
       rethrow;
     }
@@ -64,7 +66,7 @@ class JobPostingsProvider extends ChangeNotifier {
       await _repo.cancelApply(postingId);
       await loadJobPostings();
     } catch (e) {
-      _error = e.toString();
+      _error = userMessageFrom(e, fallback: '撤销申请失败，请稍后重试');
       notifyListeners();
       rethrow;
     }

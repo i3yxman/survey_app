@@ -1,8 +1,9 @@
+// lib/screens/assignments/survey_fill_page.dart
+
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:photo_manager/photo_manager.dart';
 import 'package:video_player/video_player.dart';
 import 'package:video_thumbnail/video_thumbnail.dart' as vt;
 import 'package:wechat_assets_picker/wechat_assets_picker.dart';
@@ -10,6 +11,8 @@ import 'package:wechat_camera_picker/wechat_camera_picker.dart';
 
 import '../../models/api_models.dart';
 import '../../services/api_service.dart';
+import '../../utils/error_message.dart';
+import '../../utils/snackbar.dart';
 import 'submission_comments_page.dart';
 
 /// 自定义中文文案，让底部按钮和提示都显示中文
@@ -47,8 +50,7 @@ class _ChinesePickerTextDelegate extends AssetPickerTextDelegate {
   String get unableToAccessAll => '无法访问所有照片';
 
   @override
-  String get viewingLimitedAssetsTip =>
-      '应用当前只能访问部分照片，如需完整访问，请前往系统设置修改权限。';
+  String get viewingLimitedAssetsTip => '应用当前只能访问部分照片，如需完整访问，请前往系统设置修改权限。';
 
   @override
   String get changeAccessibleLimitedAssets => '管理可访问的照片';
@@ -136,7 +138,8 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
 
   // 当前这份问卷在后端的 Submission 记录
   int? _submissionId;
-  String? _submissionStatus; // 'draft' / 'submitted' / 'needs_revision' / 'resubmitted' / ...
+  String?
+  _submissionStatus; // 'draft' / 'submitted' / 'needs_revision' / 'resubmitted' / ...
 
   bool _savingDraft = false;
   bool _submitting = false;
@@ -152,8 +155,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
       _submissionStatus == 'cancelled';
 
   // 是否存在正在上传媒体的题目
-  bool get _hasUploadingMedia =>
-      _answers.values.any((d) => d.isUploadingMedia);
+  bool get _hasUploadingMedia => _answers.values.any((d) => d.isUploadingMedia);
 
   @override
   void didChangeDependencies() {
@@ -161,8 +163,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     if (_inited) return;
     _inited = true;
 
-    _assignment =
-        ModalRoute.of(context)!.settings.arguments as Assignment;
+    _assignment = ModalRoute.of(context)!.settings.arguments as Assignment;
 
     _loadQuestionnaireAndSubmission();
   }
@@ -194,8 +195,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
       final fromDraft = _answers[lg.fromQuestionId];
       if (fromDraft == null) continue;
       final triggerOptId = lg.triggerOptionId;
-      if (triggerOptId != null &&
-          fromDraft.selectedOptionIds.contains(triggerOptId)) {
+      if (fromDraft.selectedOptionIds.contains(triggerOptId)) {
         return true;
       }
     }
@@ -272,10 +272,8 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
           if (d == null) continue;
           d.textValue = ans.textValue;
           d.numberValue = ans.numberValue;
-          d.selectedOptionIds =
-              List<int>.from(ans.selectedOptionIds);
-          d.mediaFileIds =
-              List<int>.from(ans.mediaFileIds);
+          d.selectedOptionIds = List<int>.from(ans.selectedOptionIds);
+          d.mediaFileIds = List<int>.from(ans.mediaFileIds);
         }
       }
 
@@ -291,12 +289,12 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     } on ApiException catch (e) {
       setState(() {
         _loading = false;
-        _error = e.message;
+        _error = userMessageFrom(e, fallback: '加载问卷失败，请稍后重试');
       });
     } catch (e) {
       setState(() {
         _loading = false;
-        _error = '加载问卷失败：$e';
+        _error = userMessageFrom(e, fallback: '加载问卷失败，请稍后重试');
       });
     }
   }
@@ -309,11 +307,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     // 0. 如果还有图片/视频正在上传，禁止保存草稿
     final hasUploading = _answers.values.any((d) => d.isUploadingMedia);
     if (hasUploading) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('有图片或视频正在上传，请稍候上传完成后再保存草稿'),
-        ),
-      );
+      showErrorSnackBar(context, '有图片或视频正在上传，请稍候上传完成后再保存草稿');
       return;
     }
 
@@ -340,19 +334,13 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
         _shouldRefreshOnPop = true; // 草稿保存成功后，需要刷新列表
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('草稿已保存')),
-      );
+      showSuccessSnackBar(context, '草稿已保存');
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('保存草稿失败：${e.message}')),
-      );
+      showErrorSnackBar(context, e, fallback: '保存草稿失败，请稍后重试');
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('保存草稿失败')),
-      );
+      showErrorSnackBar(context, e, fallback: '保存草稿失败，请稍后重试');
     } finally {
       if (mounted) {
         setState(() {
@@ -370,11 +358,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     // 0. 如果还有图片/视频正在上传，禁止提交
     final hasUploading = _answers.values.any((d) => d.isUploadingMedia);
     if (hasUploading) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('有图片或视频正在上传，请稍候上传完成后再提交'),
-        ),
-      );
+      showErrorSnackBar(context, '有图片或视频正在上传，请稍候上传完成后再提交');
       return;
     }
 
@@ -385,11 +369,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
       if (!qu.required) continue;
       final draft = _answers[qu.id]!;
       if (!_hasAnswer(qu, draft)) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('还有必答题未填写：${qu.text}'),
-          ),
-        );
+        showErrorSnackBar(context, '还有必答题未填写：${qu.text}');
         return;
       }
     }
@@ -403,8 +383,9 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
       final api = ApiService();
 
       // 如果当前状态是待修改（needs_revision），这次就是“重新提交”
-      final statusToSend =
-          (_submissionStatus == 'needs_revision') ? 'resubmitted' : 'submitted';
+      final statusToSend = (_submissionStatus == 'needs_revision')
+          ? 'resubmitted'
+          : 'submitted';
 
       final dto = await api.saveSubmission(
         submissionId: _submissionId,
@@ -421,19 +402,13 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
         _shouldRefreshOnPop = true; // 提交成功后，需要刷新列表
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('问卷已提交')),
-      );
+      showSuccessSnackBar(context, '问卷已提交');
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('提交失败：${e.message}')),
-      );
+      showErrorSnackBar(context, e, fallback: '提交失败，请稍后重试');
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('提交失败')),
-      );
+      showErrorSnackBar(context, e, fallback: '提交失败，请稍后重试');
     } finally {
       if (mounted) {
         setState(() {
@@ -473,8 +448,9 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
         const FilterOption(),
       );
 
-    final RequestType requestType =
-        pickImage ? RequestType.image : RequestType.video;
+    final RequestType requestType = pickImage
+        ? RequestType.image
+        : RequestType.video;
 
     return AssetPicker.pickAssets(
       context,
@@ -579,31 +555,22 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
         }
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            mediaType == 'image'
-                ? '成功上传 $successFiles 张图片'
-                : '成功上传 $successFiles 段视频',
-          ),
-        ),
-      );
+      final successMsg = mediaType == 'image'
+          ? '成功上传 $successFiles 张图片'
+          : '成功上传 $successFiles 段视频';
+      showSuccessSnackBar(context, successMsg);
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
         _pendingUploads.remove(q.id);
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('上传失败：${e.message}')),
-      );
+      showErrorSnackBar(context, e, fallback: '上传失败，请稍后重试');
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _pendingUploads.remove(q.id);
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('上传失败')),
-      );
+      showErrorSnackBar(context, e, fallback: '上传失败，请稍后重试');
     } finally {
       if (mounted) {
         setState(() {
@@ -632,16 +599,12 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                 leading: Icon(
                   mediaType == 'image' ? Icons.photo_camera : Icons.videocam,
                 ),
-                title: Text(
-                  mediaType == 'image' ? '拍照上传' : '拍摄视频上传',
-                ),
+                title: Text(mediaType == 'image' ? '拍照上传' : '拍摄视频上传'),
                 onTap: () => Navigator.of(ctx).pop('camera'),
               ),
               ListTile(
                 leading: const Icon(Icons.photo_library),
-                title: Text(
-                  mediaType == 'image' ? '从相册选择图片' : '从相册选择视频',
-                ),
+                title: Text(mediaType == 'image' ? '从相册选择图片' : '从相册选择视频'),
                 onTap: () => Navigator.of(ctx).pop('gallery'),
               ),
               const Divider(height: 0),
@@ -680,8 +643,10 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
   /// 根据若干媒体 ID，确保它们已经加载到 _mediaCache 里
   Future<void> _ensureMediaLoaded(List<int> ids) async {
     final needLoad = ids
-        .where((id) =>
-            !_mediaCache.containsKey(id) && !_loadingMediaIds.contains(id))
+        .where(
+          (id) =>
+              !_mediaCache.containsKey(id) && !_loadingMediaIds.contains(id),
+        )
         .toList();
 
     if (needLoad.isEmpty) return;
@@ -699,9 +664,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
       });
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('加载媒体信息失败：$e')),
-      );
+      showErrorSnackBar(context, e, fallback: '加载媒体信息失败，请稍后再试');
     } finally {
       _loadingMediaIds.removeAll(needLoad);
     }
@@ -761,9 +724,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
       _videoThumbCache.remove(mediaId);
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已删除')),
-    );
+    showSuccessSnackBar(context, '已删除');
   }
 
   /// 构建某题目的媒体缩略图区域（图片 / 视频共用）
@@ -801,19 +762,15 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                 if (mediaType == "image") {
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (_) => ImageGalleryPage(
-                        images: mediaList,
-                        initialIndex: i,
-                      ),
+                      builder: (_) =>
+                          ImageGalleryPage(images: mediaList, initialIndex: i),
                     ),
                   );
                 } else {
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (_) => VideoGalleryPage(
-                        videos: mediaList,
-                        initialIndex: i,
-                      ),
+                      builder: (_) =>
+                          VideoGalleryPage(videos: mediaList, initialIndex: i),
                     ),
                   );
                 }
@@ -836,8 +793,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                                 mediaList[i].fileUrl,
                               ),
                               builder: (context, snapshot) {
-                                if (snapshot.hasData &&
-                                    snapshot.data != null) {
+                                if (snapshot.hasData && snapshot.data != null) {
                                   return Image.memory(
                                     snapshot.data!,
                                     fit: BoxFit.cover,
@@ -861,8 +817,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                     right: 0,
                     top: 0,
                     child: GestureDetector(
-                      onTap: () =>
-                          _removeMedia(q, draft, mediaList[i].id),
+                      onTap: () => _removeMedia(q, draft, mediaList[i].id),
                       child: Container(
                         decoration: const BoxDecoration(
                           color: Colors.black54,
@@ -894,10 +849,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                       fit: StackFit.expand,
                       children: [
                         if (pending.mediaType == 'image')
-                          Image.file(
-                            File(pending.path),
-                            fit: BoxFit.cover,
-                          )
+                          Image.file(File(pending.path), fit: BoxFit.cover)
                         else
                           Container(
                             color: Colors.black87,
@@ -909,9 +861,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                               ),
                             ),
                           ),
-                        Container(
-                          color: Colors.black26,
-                        ),
+                        Container(color: Colors.black26),
                       ],
                     ),
                   ),
@@ -935,17 +885,13 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                             height: 12,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              valueColor:
-                                  AlwaysStoppedAnimation(Colors.white),
+                              valueColor: AlwaysStoppedAnimation(Colors.white),
                             ),
                           ),
                           SizedBox(width: 6),
                           Text(
                             '上传中…',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                            ),
+                            style: TextStyle(color: Colors.white, fontSize: 11),
                           ),
                         ],
                       ),
@@ -994,8 +940,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                     ? null
                     : (v) {
                         setState(() {
-                          draft.selectedOptionIds =
-                              v == null ? [] : [v];
+                          draft.selectedOptionIds = v == null ? [] : [v];
                         });
                       },
                 title: Text(opt.text),
@@ -1013,8 +958,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                     : (checked) {
                         setState(() {
                           if (checked == true) {
-                            if (!draft.selectedOptionIds
-                                .contains(opt.id)) {
+                            if (!draft.selectedOptionIds.contains(opt.id)) {
                               draft.selectedOptionIds.add(opt.id);
                             }
                           } else {
@@ -1044,8 +988,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
       case 'number':
         return TextFormField(
           initialValue: draft.numberValue?.toString() ?? '',
-          keyboardType:
-              const TextInputType.numberWithOptions(decimal: true),
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
           readOnly: readOnly,
           decoration: const InputDecoration(
             border: OutlineInputBorder(),
@@ -1063,10 +1006,9 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
           children: [
             Text(
               '图片上传题目（可上传多张图片）',
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: Colors.grey),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: Colors.grey),
             ),
             const SizedBox(height: 8),
             Row(
@@ -1093,10 +1035,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
               const SizedBox(height: 8),
               Text(
                 draft.mediaError!,
-                style: const TextStyle(
-                  color: Colors.red,
-                  fontSize: 12,
-                ),
+                style: const TextStyle(color: Colors.red, fontSize: 12),
               ),
             ],
           ],
@@ -1107,10 +1046,9 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
           children: [
             Text(
               '视频上传题目（可上传多段视频）',
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: Colors.grey),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: Colors.grey),
             ),
             const SizedBox(height: 8),
             Row(
@@ -1137,10 +1075,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
               const SizedBox(height: 8),
               Text(
                 draft.mediaError!,
-                style: const TextStyle(
-                  color: Colors.red,
-                  fontSize: 12,
-                ),
+                style: const TextStyle(color: Colors.red, fontSize: 12),
               ),
             ],
           ],
@@ -1156,16 +1091,12 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     if (_error != null) {
       return Scaffold(
-        appBar: AppBar(
-          title: const Text('问卷填写'),
-        ),
+        appBar: AppBar(title: const Text('问卷填写')),
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(16),
@@ -1192,12 +1123,8 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     final q = _questionnaire;
     if (q == null) {
       return Scaffold(
-        appBar: AppBar(
-          title: const Text('问卷填写'),
-        ),
-        body: const Center(
-          child: Text('问卷数据为空'),
-        ),
+        appBar: AppBar(title: const Text('问卷填写')),
+        body: const Center(child: Text('问卷数据为空')),
       );
     }
 
@@ -1255,8 +1182,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                 Text(
                   subtitleText,
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color:
-                        theme.colorScheme.onPrimary.withOpacity(0.8),
+                    color: theme.colorScheme.onPrimary.withOpacity(0.8),
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -1273,9 +1199,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                 Row(
                   children: [
                     Expanded(
-                      child: LinearProgressIndicator(
-                        value: progressValue,
-                      ),
+                      child: LinearProgressIndicator(value: progressValue),
                     ),
                     const SizedBox(width: 12),
                     Text('$answeredCount/$total'),
@@ -1285,8 +1209,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                 Expanded(
                   child: ListView.separated(
                     itemCount: visibleQuestions.length,
-                    separatorBuilder: (_, __) =>
-                        const SizedBox(height: 12),
+                    separatorBuilder: (_, __) => const SizedBox(height: 12),
                     itemBuilder: (context, index) {
                       final qu = visibleQuestions[index];
                       final draft =
@@ -1296,12 +1219,10 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                         child: Padding(
                           padding: const EdgeInsets.all(16),
                           child: Column(
-                            crossAxisAlignment:
-                                CrossAxisAlignment.start,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Row(
-                                crossAxisAlignment:
-                                    CrossAxisAlignment.start,
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   if (qu.required)
                                     const Text(
@@ -1362,8 +1283,9 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                                   height: 20,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2,
-                                    valueColor:
-                                        AlwaysStoppedAnimation(Colors.white),
+                                    valueColor: AlwaysStoppedAnimation(
+                                      Colors.white,
+                                    ),
                                   ),
                                 )
                               : const Text('提交问卷'),
@@ -1566,9 +1488,7 @@ class _VideoGalleryPageState extends State<VideoGalleryPage> {
 class _InlineVideoPlayer extends StatefulWidget {
   final String videoUrl;
 
-  const _InlineVideoPlayer({
-    required this.videoUrl,
-  });
+  const _InlineVideoPlayer({required this.videoUrl});
 
   @override
   State<_InlineVideoPlayer> createState() => _InlineVideoPlayerState();
@@ -1610,10 +1530,7 @@ class _InlineVideoPlayerState extends State<_InlineVideoPlayer> {
           children: [
             VideoPlayer(_controller),
             _PlayPauseOverlay(controller: _controller),
-            VideoProgressIndicator(
-              _controller,
-              allowScrubbing: true,
-            ),
+            VideoProgressIndicator(_controller, allowScrubbing: true),
           ],
         ),
       ),
@@ -1625,10 +1542,7 @@ class _InlineVideoPlayerState extends State<_InlineVideoPlayer> {
 class VideoPlayerPage extends StatefulWidget {
   final String videoUrl;
 
-  const VideoPlayerPage({
-    super.key,
-    required this.videoUrl,
-  });
+  const VideoPlayerPage({super.key, required this.videoUrl});
 
   @override
   State<VideoPlayerPage> createState() => _VideoPlayerPageState();
@@ -1660,10 +1574,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        title: const Text('视频播放'),
-      ),
+      appBar: AppBar(backgroundColor: Colors.black, title: const Text('视频播放')),
       body: Center(
         child: _initialized
             ? AspectRatio(
@@ -1673,10 +1584,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                   children: [
                     VideoPlayer(_controller),
                     _PlayPauseOverlay(controller: _controller),
-                    VideoProgressIndicator(
-                      _controller,
-                      allowScrubbing: true,
-                    ),
+                    VideoProgressIndicator(_controller, allowScrubbing: true),
                   ],
                 ),
               )
@@ -1689,9 +1597,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 class _PlayPauseOverlay extends StatefulWidget {
   final VideoPlayerController controller;
 
-  const _PlayPauseOverlay({
-    required this.controller,
-  });
+  const _PlayPauseOverlay({required this.controller});
 
   @override
   State<_PlayPauseOverlay> createState() => _PlayPauseOverlayState();
@@ -1712,11 +1618,7 @@ class _PlayPauseOverlayState extends State<_PlayPauseOverlay> {
       },
       child: Stack(
         children: [
-          Positioned.fill(
-            child: Container(
-              color: Colors.black26,
-            ),
-          ),
+          Positioned.fill(child: Container(color: Colors.black26)),
           Center(
             child: Icon(
               widget.controller.value.isPlaying

@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../../models/api_models.dart';
 import '../../services/api_service.dart';
+import '../../utils/error_message.dart';
+import '../../utils/snackbar.dart';
 
 class SubmissionCommentsPage extends StatefulWidget {
   final int submissionId;
@@ -30,6 +32,26 @@ class _SubmissionCommentsPageState extends State<SubmissionCommentsPage> {
   String? _error;
   List<SubmissionCommentDto> _comments = [];
 
+  bool get _canSend {
+    // 只有 needs_revision 才允许评估员发言（你也可以按需把 draft 放开）
+    return widget.status == 'needs_revision';
+  }
+
+  String get _readOnlyHint {
+    switch (widget.status) {
+      case 'submitted':
+        return '当前状态已提交，暂不支持发送消息';
+      case 'resubmitted':
+        return '当前状态已重新提交，暂不支持发送消息';
+      case 'approved':
+        return '当前状态已通过，暂不支持发送消息';
+      case 'cancelled':
+        return '当前状态已作废，暂不支持发送消息';
+      default:
+        return '当前状态不支持发送消息';
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -49,7 +71,7 @@ class _SubmissionCommentsPageState extends State<SubmissionCommentsPage> {
       });
     } catch (e) {
       setState(() {
-        _error = '加载对话失败：$e';
+        _error = userMessageFrom(e, fallback: '加载对话失败，请稍后再试');
       });
     } finally {
       setState(() {
@@ -59,6 +81,11 @@ class _SubmissionCommentsPageState extends State<SubmissionCommentsPage> {
   }
 
   Future<void> _sendComment() async {
+    if (!_canSend) {
+      showErrorSnackBar(context, _readOnlyHint);
+      return;
+    }
+
     final text = _inputController.text.trim();
     if (text.isEmpty || _sending) return;
 
@@ -76,11 +103,11 @@ class _SubmissionCommentsPageState extends State<SubmissionCommentsPage> {
         _comments = List<SubmissionCommentDto>.from(_comments)..add(dto);
         _inputController.clear();
       });
+      // 这里发送成功我就不额外弹“发送成功”了，聊天框本身会看到新消息
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('发送失败：$e')),
-      );
+      // ✅ 统一走工具方法：支持 ApiException / 其他异常
+      showErrorSnackBar(context, e, fallback: '发送失败，请稍后再试');
     } finally {
       if (mounted) {
         setState(() {
@@ -101,15 +128,13 @@ class _SubmissionCommentsPageState extends State<SubmissionCommentsPage> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.title ?? '审核沟通'),
-      ),
+      appBar: AppBar(title: Text(widget.title ?? '审核沟通')),
       body: Column(
         children: [
           if (widget.status != null) ...[
             Container(
               width: double.infinity,
-              color: theme.colorScheme.surfaceVariant,
+              color: theme.colorScheme.surfaceContainerHighest,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Text(
                 '当前状态：${widget.status}',
@@ -118,9 +143,7 @@ class _SubmissionCommentsPageState extends State<SubmissionCommentsPage> {
             ),
           ],
 
-          Expanded(
-            child: _buildBody(),
-          ),
+          Expanded(child: _buildBody()),
 
           const Divider(height: 1),
 
@@ -148,10 +171,7 @@ class _SubmissionCommentsPageState extends State<SubmissionCommentsPage> {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 8),
-              ElevatedButton(
-                onPressed: _loadComments,
-                child: const Text('重试'),
-              ),
+              ElevatedButton(onPressed: _loadComments, child: const Text('重试')),
             ],
           ),
         ),
@@ -159,9 +179,7 @@ class _SubmissionCommentsPageState extends State<SubmissionCommentsPage> {
     }
 
     if (_comments.isEmpty) {
-      return const Center(
-        child: Text('暂时还没有对话'),
-      );
+      return const Center(child: Text('暂时还没有对话'));
     }
 
     return ListView.builder(
@@ -187,28 +205,22 @@ class _SubmissionCommentsPageState extends State<SubmissionCommentsPage> {
               borderRadius: BorderRadius.circular(8),
             ),
             child: Column(
-              crossAxisAlignment:
-                  isReviewer ? CrossAxisAlignment.start : CrossAxisAlignment.end,
+              crossAxisAlignment: isReviewer
+                  ? CrossAxisAlignment.start
+                  : CrossAxisAlignment.end,
               children: [
                 Text(
-                  c.authorName.isNotEmpty ? c.authorName : (isReviewer ? '审核员' : '评估员'),
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: Colors.black54,
-                  ),
+                  c.authorName.isNotEmpty
+                      ? c.authorName
+                      : (isReviewer ? '审核员' : '评估员'),
+                  style: const TextStyle(fontSize: 11, color: Colors.black54),
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  c.message,
-                  style: const TextStyle(fontSize: 14),
-                ),
+                Text(c.message, style: const TextStyle(fontSize: 14)),
                 const SizedBox(height: 2),
                 Text(
                   _formatTime(c.createdAt),
-                  style: const TextStyle(
-                    fontSize: 10,
-                    color: Colors.black38,
-                  ),
+                  style: const TextStyle(fontSize: 10, color: Colors.black38),
                 ),
               ],
             ),
@@ -230,10 +242,7 @@ class _SubmissionCommentsPageState extends State<SubmissionCommentsPage> {
           ),
           child: Text(
             c.message,
-            style: const TextStyle(
-              fontSize: 11,
-              color: Colors.black87,
-            ),
+            style: const TextStyle(fontSize: 11, color: Colors.black87),
           ),
         ),
       ),
@@ -250,14 +259,17 @@ class _SubmissionCommentsPageState extends State<SubmissionCommentsPage> {
             Expanded(
               child: TextField(
                 controller: _inputController,
+                enabled: _canSend && !_sending,
                 minLines: 1,
                 maxLines: 4,
-                decoration: const InputDecoration(
-                  hintText: '输入要对审核员说的话…',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  hintText: _canSend ? '输入要对审核员说的话…' : _readOnlyHint,
+                  border: const OutlineInputBorder(),
                   isDense: true,
-                  contentPadding:
-                      EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 8,
+                  ),
                 ),
               ),
             ),
@@ -269,7 +281,7 @@ class _SubmissionCommentsPageState extends State<SubmissionCommentsPage> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : IconButton(
-                    onPressed: _sendComment,
+                    onPressed: (_canSend && !_sending) ? _sendComment : null,
                     icon: const Icon(Icons.send),
                   ),
           ],
@@ -281,9 +293,7 @@ class _SubmissionCommentsPageState extends State<SubmissionCommentsPage> {
   String _formatTime(DateTime dt) {
     // 简单格式：HH:mm 或 MM-dd HH:mm
     final now = DateTime.now();
-    if (now.year == dt.year &&
-        now.month == dt.month &&
-        now.day == dt.day) {
+    if (now.year == dt.year && now.month == dt.month && now.day == dt.day) {
       final h = dt.hour.toString().padLeft(2, '0');
       final m = dt.minute.toString().padLeft(2, '0');
       return '$h:$m';

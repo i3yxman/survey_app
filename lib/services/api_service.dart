@@ -12,11 +12,63 @@ import '../models/api_models.dart';
 
 /// ApiService 抛出的统一异常
 class ApiException implements Exception {
-  final String message;
-  ApiException(this.message);
+  final int? statusCode;
+  final dynamic body; // Map/List/String
+  final String userMessage; // 给用户看的“人话”
+
+  ApiException({
+    required this.userMessage,
+    this.statusCode,
+    this.body,
+  });
+
+  String get message => userMessage; // ✅ 新增：兼容旧代码里 e.message
 
   @override
-  String toString() => 'ApiException: $message';
+  String toString() => userMessage;
+
+  static String extractUserMessage(dynamic data) {
+    try {
+      // 0) 空
+      if (data == null) return "操作失败，请稍后再试";
+
+      // 1) 后端返回 {message: "..."}（你自定义时可用）
+      if (data is Map && data["message"] is String) {
+        return (data["message"] as String).trim();
+      }
+
+      // 2) DRF 默认 {detail: "..."}
+      if (data is Map && data["detail"] != null) {
+        final d = data["detail"];
+        if (d is String) return d.trim();
+        if (d is Map && d["message"] is String) return (d["message"] as String).trim();
+      }
+
+      // 3) DRF 字段校验错误 {field: ["..."]} 或 {field: "..."}
+      if (data is Map) {
+        for (final entry in data.entries) {
+          final v = entry.value;
+          if (v is List && v.isNotEmpty) return v.first.toString().trim();
+          if (v is String && v.trim().isNotEmpty) return v.trim();
+        }
+      }
+
+      // 4) 如果是字符串 JSON，尝试 decode
+      if (data is String) {
+        final s = data.trim();
+        if (s.isEmpty) return "操作失败，请稍后再试";
+        try {
+          final decoded = json.decode(s);
+          return extractUserMessage(decoded);
+        } catch (_) {
+          // 非 JSON 字符串
+          return s;
+        }
+      }
+    } catch (_) {}
+
+    return "操作失败，请稍后再试";
+  }
 }
 
 /// 后端接口统一客户端（单例）
@@ -39,6 +91,48 @@ class ApiService {
   // Dio：非 late、非可空，构造函数里直接 new
   final Dio _dio;
 
+
+  dynamic _tryDecode(String s) {
+    final t = s.trim();
+    if (t.isEmpty) return null;
+    try {
+      return jsonDecode(t);
+    } catch (_) {
+      return t;
+    }
+  }
+
+  Never _throwHttpResponseError(http.Response resp, {String fallback = "请求失败"}) {
+    final data = _tryDecode(resp.body);
+    final msg = ApiException.extractUserMessage(data);
+
+    throw ApiException(
+      userMessage: (msg.isNotEmpty ? msg : fallback),
+      statusCode: resp.statusCode,
+      body: data,
+    );
+  }
+
+  Never _throwDioError(DioException e, {String fallback = "请求失败"}) {
+    final status = e.response?.statusCode;
+    final data = e.response?.data;
+
+    // dio 的 data 可能已经是 Map/List，也可能是 String
+    final normalized = (data is String) ? _tryDecode(data) : data;
+    final msg = ApiException.extractUserMessage(normalized);
+
+    throw ApiException(
+      userMessage: (msg.isNotEmpty ? msg : fallback),
+      statusCode: status,
+      body: normalized,
+    );
+  }
+
+  /// 用于把服务端 500 / 网络异常转成用户能懂的一句话
+  Never _throwUnknown(Object e, {String fallback = "网络异常，请稍后重试"}) {
+    throw ApiException(userMessage: fallback, body: e.toString());
+  }
+
   /// 测试环境可以注入 MockClient
   @visibleForTesting
   set httpClient(http.Client client) {
@@ -55,7 +149,7 @@ class ApiService {
   Future<LoginResult> login(String username, String password) async {
     final url = Uri.parse('${Env.apiBaseUrl}/api/accounts/login/');
 
-    final resp = await http.post(
+    final resp = await _client.post(
       url,
       headers: {
         'Content-Type': 'application/json',
@@ -67,23 +161,7 @@ class ApiService {
     );
 
     if (resp.statusCode != 200) {
-      // 默认提示
-      String msg = '登录失败：${resp.statusCode}';
-
-      // 尝试解析后端返回的 JSON，把 non_field_errors / detail 提取出来
-      try {
-        final data = jsonDecode(resp.body);
-        if (data is Map<String, dynamic>) {
-          final nfe = data['non_field_errors'];
-          if (nfe is List && nfe.isNotEmpty) {
-            msg = nfe.first.toString();
-          } else if (data['detail'] is String) {
-            msg = data['detail'] as String;
-          }
-        }
-      } catch (_) {}
-
-      throw ApiException(msg);
+      _throwHttpResponseError(resp, fallback: "登录失败");
     }
 
     // 登录成功后，后端不返回 token，而是继续使用 Basic Auth
@@ -115,34 +193,7 @@ class ApiService {
     );
 
     if (resp.statusCode != 200) {
-      String msg = '修改密码失败：${resp.statusCode}';
-
-      try {
-        final data = jsonDecode(resp.body);
-        if (data is Map<String, dynamic>) {
-          // 情况1：ValidationError('原密码不正确') => non_field_errors
-          if (data['non_field_errors'] is List &&
-              (data['non_field_errors'] as List).isNotEmpty) {
-            msg = (data['non_field_errors'] as List).first.toString();
-          }
-          // 情况2：ValidationError({'old_password': ['原密码不正确']})
-          else if (data['old_password'] is List &&
-              (data['old_password'] as List).isNotEmpty) {
-            msg = (data['old_password'] as List).first.toString();
-          }
-          // 情况3：新密码不符合规则（长度不够等）
-          else if (data['new_password'] is List &&
-              (data['new_password'] as List).isNotEmpty) {
-            msg = (data['new_password'] as List).first.toString();
-          }
-          // 情况4：通用 detail
-          else if (data['detail'] is String) {
-            msg = data['detail'] as String;
-          }
-        }
-      } catch (_) {}
-
-      throw ApiException(msg);
+      _throwHttpResponseError(resp, fallback: "修改密码失败");
     }
   }
 
@@ -165,30 +216,7 @@ class ApiService {
     );
 
     if (resp.statusCode < 200 || resp.statusCode >= 300) {
-      String msg = '请求失败：${resp.statusCode}';
-
-      try {
-        final data = jsonDecode(resp.body);
-        if (data is Map<String, dynamic>) {
-          // 1）优先用 detail
-          if (data['detail'] is String) {
-            msg = data['detail'] as String;
-          } else {
-            // 2）再从字段错误里抓一条人话
-            for (final value in data.values) {
-              if (value is List && value.isNotEmpty) {
-                msg = value.first.toString();
-                break;
-              } else if (value is String) {
-                msg = value;
-                break;
-              }
-            }
-          }
-        }
-      } catch (_) {}
-
-      throw ApiException(msg);
+      _throwHttpResponseError(resp, fallback: "请求失败");
     }
 
     // 成功时返回后端给的 detail 文案（比如“系统已记录你的请求，请联系管理员 XXX”）
@@ -214,7 +242,7 @@ class ApiService {
     );
 
     if (resp.statusCode != 200) {
-      throw ApiException('getMyAssignments 失败: ${resp.statusCode}');
+      _throwHttpResponseError(resp, fallback: "获取任务列表失败");
     }
 
     final list = jsonDecode(resp.body) as List<dynamic>;
@@ -234,7 +262,7 @@ class ApiService {
     );
 
     if (resp.statusCode != 200) {
-      throw ApiException('getJobPostings 失败: ${resp.statusCode}');
+      _throwHttpResponseError(resp, fallback: "获取任务大厅失败");
     }
 
     final list = jsonDecode(resp.body) as List<dynamic>;
@@ -247,61 +275,52 @@ class ApiService {
       '${Env.apiBaseUrl}/api/assignments/job-postings/$postingId/apply/',
     );
 
-    final resp = await http.post(
-      url,
-      headers: {
-        'Authorization': _authBasic ?? '',
-        'Content-Type': 'application/json',
-      },
-    );
-
-    // 成功：2xx
-    if (resp.statusCode >= 200 && resp.statusCode < 300) {
-      if (resp.body.isEmpty) return {};
-      return jsonDecode(resp.body) as Map<String, dynamic>;
-    }
-
-    // 失败：尽量从后端 JSON 里抽出人话
-    String message = '任务申请失败';
-
     try {
-      final data = jsonDecode(resp.body);
+      final resp = await _client.post(
+        url,
+        headers: {
+          'Authorization': _authBasic ?? '',
+          'Content-Type': 'application/json',
+        },
+      );
 
-      if (data is Map<String, dynamic>) {
-        if (data['detail'] is String) {
-          message = data['detail'] as String;
-        } else if (data['non_field_errors'] is List &&
-            (data['non_field_errors'] as List).isNotEmpty) {
-          message = (data['non_field_errors'] as List)
-              .map((e) => e.toString())
-              .join('\n');
-        }
+      if (resp.statusCode < 200 || resp.statusCode >= 300) {
+        _throwHttpResponseError(resp, fallback: "任务申请失败");
       }
-    } catch (_) {}
 
-    throw ApiException(message);
+      if (resp.body.isEmpty) return {};
+      final data = jsonDecode(resp.body);
+      if (data is Map<String, dynamic>) return data;
+      return {};
+    } catch (e) {
+      _throwUnknown(e, fallback: "任务申请失败，请稍后重试");
+    }
   }
 
   /// 撤销申请（未分配前）
   Future<Map<String, dynamic>> cancelJobPostingApply(int postingId) async {
     final url = Uri.parse(
-        '${Env.apiBaseUrl}/api/assignments/job-postings/$postingId/cancel/');
-
-    final resp = await _client.post(
-      url,
-      headers: {
-        'Authorization': _authBasic ?? '',
-        'Content-Type': 'application/json',
-      },
+      '${Env.apiBaseUrl}/api/assignments/job-postings/$postingId/cancel/',
     );
 
-    if (resp.statusCode < 200 || resp.statusCode >= 300) {
-      throw ApiException(
-        'POST /job-postings/$postingId/cancel/ 失败: ${resp.statusCode} ${resp.body}',
+    try {
+      final resp = await _client.post(
+        url,
+        headers: {
+          'Authorization': _authBasic ?? '',
+          'Content-Type': 'application/json',
+        },
       );
-    }
 
-    return jsonDecode(resp.body) as Map<String, dynamic>;
+      if (resp.statusCode < 200 || resp.statusCode >= 300) {
+        _throwHttpResponseError(resp, fallback: "撤销申请失败");
+      }
+
+      return jsonDecode(resp.body) as Map<String, dynamic>;
+    } catch (e) {
+      if (e is ApiException) rethrow;
+      _throwUnknown(e, fallback: "撤销申请失败，请稍后重试");
+    }
   }
 
   /// 上传媒体文件到后端（带进度）
@@ -329,35 +348,32 @@ class ApiService {
         data: formData,
         options: Options(
           headers: {
-            // 双保险：这里也带上 Authorization
             'Authorization': _authBasic ?? '',
           },
         ),
         onSendProgress: (sent, total) {
-          if (onProgress != null) {
-            onProgress(sent, total);
-          }
+          onProgress?.call(sent, total);
         },
       );
 
       final status = resp.statusCode ?? 0;
-      if (status != 200 && status != 201) {
-        throw ApiException('上传媒体失败: $status ${resp.data}');
+      if (status < 200 || status >= 300) {
+        // 这里不用拼字符串，走统一提取
+        final msg = ApiException.extractUserMessage(resp.data);
+        throw ApiException(
+          userMessage: msg.isNotEmpty ? msg : "上传媒体失败",
+          statusCode: status,
+          body: resp.data,
+        );
       }
 
       dynamic data = resp.data;
-      if (data is String) {
-        data = jsonDecode(data);
-      }
-
+      if (data is String) data = _tryDecode(data);
       return MediaFileDto.fromJson(data as Map<String, dynamic>);
-    } on DioException catch (e, stack) {
-
-      final status = e.response?.statusCode;
-      final body = e.response?.data;
-      throw ApiException('上传媒体失败: $status $body');
-    } catch (e, stack) {
-      throw ApiException('上传媒体失败: $e');
+    } on DioException catch (e) {
+      _throwDioError(e, fallback: "上传媒体失败");
+    } catch (e) {
+      _throwUnknown(e, fallback: "上传媒体失败，请稍后重试");
     }
   }
 
@@ -369,21 +385,24 @@ class ApiService {
       '${Env.apiBaseUrl}/api/assignments/media-files/?ids=${ids.join(",")}',
     );
 
-    final resp = await _client.get(
-      url,
-      headers: {
-        'Authorization': _authBasic ?? '',
-      },
-    );
+    try {
+      final resp = await _client.get(
+        url,
+        headers: {'Authorization': _authBasic ?? ''},
+      );
 
-    if (resp.statusCode != 200) {
-      throw ApiException('获取媒体信息失败: ${resp.statusCode} ${resp.body}');
+      if (resp.statusCode != 200) {
+        _throwHttpResponseError(resp, fallback: "获取媒体信息失败");
+      }
+
+      final list = jsonDecode(resp.body) as List<dynamic>;
+      return list
+          .map((e) => MediaFileDto.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      if (e is ApiException) rethrow;
+      _throwUnknown(e, fallback: "获取媒体信息失败，请稍后重试");
     }
-
-    final list = jsonDecode(resp.body) as List<dynamic>;
-    return list
-        .map((e) => MediaFileDto.fromJson(e as Map<String, dynamic>))
-        .toList();
   }
 
   /// ================== 提交对话（审核沟通）相关接口 ==================
@@ -394,28 +413,31 @@ class ApiService {
       '${Env.apiBaseUrl}/api/assignments/submissions/$submissionId/comments/',
     );
 
-    final resp = await _client.get(
-      url,
-      headers: {
-        'Authorization': _authBasic ?? '',
-        'Content-Type': 'application/json',
-      },
-    );
-
-    if (resp.statusCode != 200) {
-      throw ApiException(
-        '获取提交对话失败: ${resp.statusCode} ${resp.body}',
+    try {
+      final resp = await _client.get(
+        url,
+        headers: {
+          'Authorization': _authBasic ?? '',
+          'Content-Type': 'application/json',
+        },
       );
-    }
 
-    final data = jsonDecode(resp.body);
-    if (data is! List) {
-      throw ApiException('获取提交对话失败：返回格式错误');
-    }
+      if (resp.statusCode != 200) {
+        _throwHttpResponseError(resp, fallback: "加载沟通记录失败");
+      }
 
-    return data
-        .map((e) => SubmissionCommentDto.fromJson(e as Map<String, dynamic>))
-        .toList();
+      final data = jsonDecode(resp.body);
+      if (data is! List) {
+        throw ApiException(userMessage: "加载沟通记录失败：返回格式错误");
+      }
+
+      return data
+          .map((e) => SubmissionCommentDto.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      if (e is ApiException) rethrow;
+      _throwUnknown(e, fallback: "加载沟通记录失败，请稍后重试");
+    }
   }
 
   /// 给某个 submission 发表一条评论（评估员或审核员都用这个接口）
@@ -427,25 +449,26 @@ class ApiService {
       '${Env.apiBaseUrl}/api/assignments/submissions/$submissionId/comments/',
     );
 
-    final resp = await _client.post(
-      url,
-      headers: {
-        'Authorization': _authBasic ?? '',
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        'message': message,
-      }),
-    );
-
-    if (resp.statusCode != 201) {
-      throw ApiException(
-        '发表评论失败: ${resp.statusCode} ${resp.body}',
+    try {
+      final resp = await _client.post(
+        url,
+        headers: {
+          'Authorization': _authBasic ?? '',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({'message': message}),
       );
-    }
 
-    final data = jsonDecode(resp.body) as Map<String, dynamic>;
-    return SubmissionCommentDto.fromJson(data);
+      if (resp.statusCode != 201) {
+        _throwHttpResponseError(resp, fallback: "发送失败");
+      }
+
+      final data = jsonDecode(resp.body) as Map<String, dynamic>;
+      return SubmissionCommentDto.fromJson(data);
+    } catch (e) {
+      if (e is ApiException) rethrow;
+      _throwUnknown(e, fallback: "发送失败，请稍后重试");
+    }
   }
 
   /// 取消任务（两阶段）
@@ -465,7 +488,7 @@ class ApiService {
     );
 
     if (resp.statusCode != 200) {
-      throw ApiException('取消任务失败: ${resp.statusCode}');
+      _throwHttpResponseError(resp, fallback: "取消任务失败");
     }
 
     final data = jsonDecode(resp.body) as Map<String, dynamic>;
@@ -485,7 +508,7 @@ class ApiService {
     );
 
     if (resp.statusCode != 200) {
-      throw ApiException('getSubmissions 失败: ${resp.statusCode}');
+      _throwHttpResponseError(resp, fallback: "获取提交记录失败");
     }
 
     final list = jsonDecode(resp.body) as List<dynamic>;
@@ -507,7 +530,7 @@ class ApiService {
     );
 
     if (resp.statusCode != 200) {
-      throw ApiException('获取问卷失败: ${resp.statusCode}');
+      _throwHttpResponseError(resp, fallback: "获取问卷失败");
     }
 
     final data = jsonDecode(resp.body) as Map<String, dynamic>;
@@ -580,7 +603,7 @@ class ApiService {
         : await _client.put(url, headers: headers, body: body);
 
     if (resp.statusCode != 200 && resp.statusCode != 201) {
-      throw ApiException('保存提交失败: ${resp.statusCode} ${resp.body}');
+      _throwHttpResponseError(resp, fallback: "保存失败");
     }
 
     final data = jsonDecode(resp.body) as Map<String, dynamic>;

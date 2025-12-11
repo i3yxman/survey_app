@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
+import '../../utils/snackbar.dart';
 
 class ForgotPasswordPage extends StatefulWidget {
   const ForgotPasswordPage({super.key});
@@ -26,9 +27,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   Future<void> _submit() async {
     final identifier = _identifierCtrl.text.trim();
     if (identifier.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入手机号或用户名')),
-      );
+      showErrorSnackBar(context, '请输入手机号或用户名');
       return;
     }
 
@@ -37,25 +36,19 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
     });
 
     try {
-      // ✅ 改成走 AuthProvider，而不是自己 new ApiService
+      // ✅ 走 AuthProvider，而不是自己 new ApiService
       final auth = context.read<AuthProvider>();
       final detail = await auth.requestPasswordReset(identifier);
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(detail)),
-      );
+      showSuccessSnackBar(context, detail);
       Navigator.pop(context); // 返回登录页
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message)),
-      );
+      showErrorSnackBar(context, e, fallback: '重置失败，请稍后再试');
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('重置失败，请稍后再试')),
-      );
+      showErrorSnackBar(context, e, fallback: '重置失败，请稍后再试');
     } finally {
       if (mounted) {
         setState(() {
@@ -71,9 +64,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
     final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('忘记密码'),
-      ),
+      appBar: AppBar(title: const Text('忘记密码')),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(20),
@@ -107,8 +98,9 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                           height: 20,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            valueColor:
-                                AlwaysStoppedAnimation<Color>(Colors.white),
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white,
+                            ),
                           ),
                         )
                       : const Text('提交重置请求'),

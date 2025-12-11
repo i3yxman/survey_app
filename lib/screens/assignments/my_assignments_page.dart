@@ -13,6 +13,7 @@ import '../../providers/location_provider.dart'; // ⭐ 新增
 import '../../services/api_service.dart';
 import '../../widgets/info_chip.dart';
 import '../../utils/location_utils.dart';
+import '../../utils/snackbar.dart';
 
 /// 把后端的状态英文码映射成前端展示用的中文文案
 String statusLabel(String status) {
@@ -77,8 +78,7 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> {
     Uri uri;
 
     if (Platform.isIOS) {
-      uri =
-          Uri.parse('http://maps.apple.com/?daddr=$lat,$lng&q=$encodedLabel');
+      uri = Uri.parse('http://maps.apple.com/?daddr=$lat,$lng&q=$encodedLabel');
     } else {
       uri = Uri.parse(
         'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng',
@@ -87,9 +87,7 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> {
 
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('无法打开地图应用')),
-      );
+      showErrorSnackBar(context, '无法打开地图应用');
     }
   }
 
@@ -105,9 +103,7 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> {
 
       if (!preview.confirmRequired) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(preview.detail)),
-        );
+        showSuccessSnackBar(context, preview.detail);
         await _refresh();
         return;
       }
@@ -127,10 +123,7 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> {
                   const SizedBox(height: 12),
                   Text(
                     preview.rule!,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey,
-                    ),
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
                   ),
                 ],
               ],
@@ -160,20 +153,14 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> {
       );
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result.detail)),
-      );
+      showSuccessSnackBar(context, result.detail);
       await _refresh();
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message)),
-      );
+      showErrorSnackBar(context, e, fallback: '操作失败，请稍后重试');
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('取消任务失败: $e')),
-      );
+      showErrorSnackBar(context, e, fallback: '取消任务失败，请稍后再试');
     }
   }
 
@@ -205,7 +192,9 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> {
 
     final status = a.status;
     final canCancel =
-        !(status == 'submitted' || status == 'reviewed' || status == 'cancelled');
+        !(status == 'submitted' ||
+            status == 'reviewed' ||
+            status == 'cancelled');
 
     final primaryLabel = _primaryActionLabel(a);
     final primaryEnabled = _primaryActionEnabled(a);
@@ -234,13 +223,12 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> {
                   : null,
               style: ElevatedButton.styleFrom(
                 minimumSize: const Size(0, 32),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
               ),
-              child: Text(
-                primaryLabel,
-                overflow: TextOverflow.ellipsis,
-              ),
+              child: Text(primaryLabel, overflow: TextOverflow.ellipsis),
             ),
           ),
           const SizedBox(height: 6),
@@ -248,8 +236,7 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> {
             onPressed: canCancel ? () => _handleCancelAssignment(a) : null,
             style: TextButton.styleFrom(
               minimumSize: const Size(0, 32),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             ),
             child: const Text('取消任务'),
           ),
@@ -259,35 +246,26 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> {
   }
 
   /// 底部信息：门店 / 创建时间 / 距离 / 导航
-  Widget _buildBottomMeta(
-    Assignment a,
-    LocationProvider loc,
-  ) {
+  Widget _buildBottomMeta(Assignment a, LocationProvider loc) {
     final storeLine = a.storeAddress != null && a.storeAddress!.isNotEmpty
         ? '门店：${a.storeName ?? ''}（${a.storeAddress}）'
         : (a.storeName != null ? '门店：${a.storeName}' : null);
 
-    final distanceText =
-        _formatDistance(loc, a.storeLatitude, a.storeLongitude);
+    final distanceText = _formatDistance(
+      loc,
+      a.storeLatitude,
+      a.storeLongitude,
+    );
 
     return Wrap(
       spacing: 8,
       runSpacing: 4,
       children: [
         if (storeLine != null)
-          InfoChip(
-            icon: Icons.storefront_outlined,
-            text: storeLine,
-          ),
-        InfoChip(
-          icon: Icons.schedule_outlined,
-          text: '创建时间：${a.createdAt}',
-        ),
+          InfoChip(icon: Icons.storefront_outlined, text: storeLine),
+        InfoChip(icon: Icons.schedule_outlined, text: '创建时间：${a.createdAt}'),
         if (distanceText != null)
-          InfoChip(
-            icon: Icons.place_outlined,
-            text: '距离门店 $distanceText',
-          ),
+          InfoChip(icon: Icons.place_outlined, text: '距离门店 $distanceText'),
         if (a.storeLatitude != null && a.storeLongitude != null)
           InfoChip(
             icon: Icons.navigation_outlined,
@@ -314,15 +292,12 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    '加载任务失败：${provider.error}',
+                    provider.error ?? '加载任务失败，请稍后重试',
                     style: const TextStyle(color: Colors.red),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 12),
-                  ElevatedButton(
-                    onPressed: _refresh,
-                    child: const Text('重试'),
-                  ),
+                  ElevatedButton(onPressed: _refresh, child: const Text('重试')),
                 ],
               ),
             ),

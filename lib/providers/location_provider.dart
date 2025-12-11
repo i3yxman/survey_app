@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../utils/location_utils.dart';
+import '../utils/error_message.dart';
 
 /// 统一管理当前用户定位的全局 Provider
 ///
@@ -34,7 +35,8 @@ class LocationProvider extends ChangeNotifier {
       final pos = await determineUserPosition();
       _position = pos;
     } catch (e) {
-      _error = e.toString();
+      _position = null;
+      _error = userMessageFrom(e, fallback: '获取位置信息失败，请稍后再试');
     } finally {
       _isLoading = false;
       notifyListeners();

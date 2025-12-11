@@ -7,6 +7,7 @@ import 'package:local_auth/local_auth.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../providers/auth_provider.dart';
+import '../../utils/snackbar.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -25,8 +26,8 @@ class _LoginPageState extends State<LoginPage> {
   bool _obscurePassword = true;
   bool _rememberMe = false;
 
-  bool _biometricAvailable = false;   // 设备是否支持生物识别
-  bool _hasStoredCredential = false;  // 是否存过账号密码
+  bool _biometricAvailable = false; // 设备是否支持生物识别
+  bool _hasStoredCredential = false; // 是否存过账号密码
 
   String _biometricLabel = '使用指纹 / 面容快速登录';
 
@@ -75,8 +76,8 @@ class _LoginPageState extends State<LoginPage> {
       _savedUsername = savedUser; // ⭐ 绑定账号名
 
       if (remember && hasStored) {
-        _usernameCtrl.text = savedUser!;
-        _passwordCtrl.text = savedPass!;
+        _usernameCtrl.text = savedUser;
+        _passwordCtrl.text = savedPass;
       }
     });
   }
@@ -116,9 +117,7 @@ class _LoginPageState extends State<LoginPage> {
 
       // 有生物识别能力 + 勾了“记住密码”，给一个简单提示即可
       if (_biometricAvailable && _rememberMe) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已记住密码，下次可以$_biometricLabel')),
-        );
+        showSuccessSnackBar(context, '已记住密码，下次可以$_biometricLabel');
       }
 
       Navigator.pushReplacementNamed(context, '/home');
@@ -161,15 +160,12 @@ class _LoginPageState extends State<LoginPage> {
       if (auth.error == null) {
         Navigator.pushReplacementNamed(context, '/home');
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('生物识别登录失败，请重新输入密码')),
-        );
+        showErrorSnackBar(context, auth.error ?? '生物识别登录失败，请稍后再试');
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('生物识别不可用：$e')),
-      );
+      // 这里一般是本地生物识别组件/系统异常
+      showErrorSnackBar(context, e, fallback: '生物识别不可用，请稍后再试');
     }
   }
 
@@ -188,10 +184,11 @@ class _LoginPageState extends State<LoginPage> {
 
     // ⭐ 只有在：设备支持 + 有保存的账号密码 + 绑定账号存在 + 当前输入账号为空或等于绑定账号 时，才显示按钮
     final inputName = _usernameCtrl.text.trim();
-    final canUseBiometric = _biometricAvailable &&
+    final canUseBiometric =
+        _biometricAvailable &&
         _hasStoredCredential &&
         _savedUsername != null &&
-        inputName == _savedUsername;  // ⭐ 不再允许用户名为空时显示
+        inputName == _savedUsername; // ⭐ 不再允许用户名为空时显示
 
     return Scaffold(
       body: Container(
@@ -226,8 +223,8 @@ class _LoginPageState extends State<LoginPage> {
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: (isDark
-                                  ? Colors.white.withOpacity(0.06)
-                                  : Colors.black.withOpacity(0.04)),
+                              ? Colors.white.withOpacity(0.06)
+                              : Colors.black.withOpacity(0.04)),
                         ),
                         child: Icon(
                           Icons.checklist_rtl,
@@ -247,8 +244,9 @@ class _LoginPageState extends State<LoginPage> {
                       Text(
                         '登录后即可查看当前任务和任务大厅',
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.textTheme.bodySmall?.color
-                              ?.withOpacity(0.65),
+                          color: theme.textTheme.bodySmall?.color?.withOpacity(
+                            0.65,
+                          ),
                         ),
                         textAlign: TextAlign.center,
                       ),
@@ -300,17 +298,18 @@ class _LoginPageState extends State<LoginPage> {
                                     },
                                     decoration: InputDecoration(
                                       labelText: '用户名',
-                                      prefixIcon:
-                                          const Icon(Icons.person_outline),
+                                      prefixIcon: const Icon(
+                                        Icons.person_outline,
+                                      ),
                                       filled: true,
                                       fillColor: isDark
                                           ? Colors.white.withOpacity(0.02)
                                           : Colors.white,
                                       contentPadding:
                                           const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 12,
-                                      ),
+                                            horizontal: 12,
+                                            vertical: 12,
+                                          ),
                                       border: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(12),
                                       ),
@@ -343,8 +342,9 @@ class _LoginPageState extends State<LoginPage> {
                                     },
                                     decoration: InputDecoration(
                                       labelText: '密码',
-                                      prefixIcon:
-                                          const Icon(Icons.lock_outline),
+                                      prefixIcon: const Icon(
+                                        Icons.lock_outline,
+                                      ),
                                       suffixIcon: IconButton(
                                         icon: Icon(
                                           _obscurePassword
@@ -364,9 +364,9 @@ class _LoginPageState extends State<LoginPage> {
                                           : Colors.white,
                                       contentPadding:
                                           const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 12,
-                                      ),
+                                            horizontal: 12,
+                                            vertical: 12,
+                                          ),
                                       border: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(12),
                                       ),
@@ -409,7 +409,9 @@ class _LoginPageState extends State<LoginPage> {
                                       TextButton(
                                         onPressed: () {
                                           Navigator.pushNamed(
-                                              context, '/forgot-password');
+                                            context,
+                                            '/forgot-password',
+                                          );
                                         },
                                         child: const Text(
                                           '忘记密码？',
@@ -441,10 +443,10 @@ class _LoginPageState extends State<LoginPage> {
                                       ? const SizedBox(
                                           height: 44,
                                           width: 44,
-                                          child: CircularProgressIndicator
-                                              .adaptive(
-                                            strokeWidth: 2,
-                                          ),
+                                          child:
+                                              CircularProgressIndicator.adaptive(
+                                                strokeWidth: 2,
+                                              ),
                                         )
                                       : SizedBox(
                                           width: double.infinity,
@@ -483,8 +485,9 @@ class _LoginPageState extends State<LoginPage> {
                       Text(
                         'Powered by Souldigger Technology Co., Ltd.',
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.textTheme.bodySmall?.color
-                              ?.withOpacity(0.6),
+                          color: theme.textTheme.bodySmall?.color?.withOpacity(
+                            0.6,
+                          ),
                         ),
                       ),
                     ],

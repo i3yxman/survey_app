@@ -4,13 +4,14 @@ import 'package:flutter/foundation.dart';
 
 import '../models/api_models.dart';
 import '../repositories/assignment_repository.dart';
+import '../utils/error_message.dart';
 
 /// “我的任务” Provider
 class AssignmentProvider extends ChangeNotifier {
   final AssignmentRepository _repo;
 
   AssignmentProvider({AssignmentRepository? repo})
-      : _repo = repo ?? AssignmentRepository();
+    : _repo = repo ?? AssignmentRepository();
 
   bool _isLoading = false;
   String? _error;
@@ -37,8 +38,8 @@ class AssignmentProvider extends ChangeNotifier {
       final list = await _repo.fetchMyAssignments();
       _assignments = list;
     } catch (e) {
-      _error = e.toString();
       _assignments = [];
+      _error = userMessageFrom(e, fallback: '加载任务失败，请稍后重试');
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -50,10 +51,7 @@ class AssignmentProvider extends ChangeNotifier {
     required int assignmentId,
     bool confirm = false,
   }) {
-    return _repo.cancelAssignment(
-      assignmentId: assignmentId,
-      confirm: confirm,
-    );
+    return _repo.cancelAssignment(assignmentId: assignmentId, confirm: confirm);
   }
 
   /// 获取某个任务的提交记录

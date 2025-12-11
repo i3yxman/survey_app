@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/auth_provider.dart';
+import '../../utils/snackbar.dart';
 
 class ChangePasswordPage extends StatefulWidget {
   const ChangePasswordPage({super.key});
@@ -37,36 +38,25 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
     final confirmPwd = _confirmPwdCtrl.text;
 
     if (oldPwd.isEmpty || newPwd.isEmpty || confirmPwd.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请填写完整')),
-      );
+      showErrorSnackBar(context, '请填写完整');
       return;
     }
 
     if (newPwd != confirmPwd) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('两次输入的新密码不一致')),
-      );
+      showErrorSnackBar(context, '两次输入的新密码不一致');
       return;
     }
 
-    await auth.changePassword(
-      oldPassword: oldPwd,
-      newPassword: newPwd,
-    );
+    await auth.changePassword(oldPassword: oldPwd, newPassword: newPwd);
 
     if (!mounted) return;
 
     if (auth.error != null) {
       // 修改失败，错误信息已经写在 auth.error 里
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(auth.error!)),
-      );
+      showErrorSnackBar(context, auth.error!);
     } else {
       // 修改成功
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('密码修改成功')),
-      );
+      showSuccessSnackBar(context, '密码修改成功');
       Navigator.of(context).pop();
     }
   }
@@ -77,9 +67,7 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('修改密码'),
-      ),
+      appBar: AppBar(title: const Text('修改密码')),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),
@@ -170,10 +158,7 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
                 padding: const EdgeInsets.only(bottom: 8.0),
                 child: Text(
                   auth.error!,
-                  style: const TextStyle(
-                    color: Colors.redAccent,
-                    fontSize: 12,
-                  ),
+                  style: const TextStyle(color: Colors.redAccent, fontSize: 12),
                 ),
               ),
 

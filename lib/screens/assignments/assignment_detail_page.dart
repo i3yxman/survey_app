@@ -1,11 +1,15 @@
 // lib/screens/assignments/assignment_detail_page.dart
 
+// lib/screens/assignments/assignment_detail_page.dart
+
 import 'package:flutter/material.dart';
 import 'package:maps_launcher/maps_launcher.dart';
 
 import '../../models/api_models.dart';
 import '../../widgets/info_chip.dart';
 import 'my_assignments_page.dart' show statusLabel;
+
+import '../../utils/snackbar.dart';
 
 class AssignmentDetailPage extends StatelessWidget {
   const AssignmentDetailPage({super.key});
@@ -60,9 +64,7 @@ class AssignmentDetailPage extends StatelessWidget {
     final primaryEnabled = _primaryActionEnabled(a);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('问卷填写'),
-      ),
+      appBar: AppBar(title: const Text('问卷填写')),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -160,18 +162,15 @@ class AssignmentDetailPage extends StatelessWidget {
                     child: ElevatedButton(
                       onPressed: primaryEnabled
                           ? () {
-                              // TODO: 这里跳转到真正的问卷表单页
-                              // 例如：
+                              // TODO: 这里以后接真正的问卷表单页路由
                               // Navigator.pushNamed(
                               //   context,
                               //   '/survey-fill',
                               //   arguments: a,
                               // );
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('问卷表单页还没接好（占位按钮）'),
-                                ),
-                              );
+
+                              // 现在先用统一封装的错误提示（占位）
+                              showErrorSnackBar(context, '问卷表单页还没接好（占位按钮）');
                             }
                           : null,
                       style: ElevatedButton.styleFrom(
