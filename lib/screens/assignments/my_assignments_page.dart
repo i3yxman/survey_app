@@ -186,7 +186,7 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> {
   }
 
   /// 右侧按钮区域：主操作（开始/继续/查看） + 取消任务
-  Widget _buildTrailing(Assignment a) {
+  Widget _buildTrailing(Assignment a, {required bool loading}) {
     const trailingWidth = 120.0;
 
     final status = a.status;
@@ -206,7 +206,7 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: primaryEnabled
+              onPressed: (!loading && primaryEnabled)
                   ? () async {
                       final needRefresh = await Navigator.pushNamed(
                         context,
@@ -232,7 +232,9 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> {
           ),
           const SizedBox(height: 6),
           TextButton(
-            onPressed: canCancel ? () => _handleCancelAssignment(a) : null,
+            onPressed: (!loading && canCancel)
+                ? () => _handleCancelAssignment(a)
+                : null,
             style: TextButton.styleFrom(
               minimumSize: const Size(0, 32),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -326,9 +328,13 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> {
             itemBuilder: (context, index) {
               final a = items[index];
 
-              final title = a.storeName != null && a.storeName!.isNotEmpty
-                  ? '${a.clientName} - ${a.projectName} - ${a.storeName}'
-                  : '${a.clientName} - ${a.projectName}';
+              final client = (a.clientName ?? '').trim();
+              final project = (a.projectName ?? '').trim();
+              final store = (a.storeName ?? '').trim();
+
+              final title = store.isNotEmpty
+                  ? '$client - $project - $store'
+                  : '$client - $project';
 
               return Card(
                 child: Padding(
@@ -382,7 +388,7 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> {
 
                       const SizedBox(width: 12),
 
-                      _buildTrailing(a),
+                      _buildTrailing(a, loading: provider.isLoading),
                     ],
                   ),
                 ),

@@ -60,24 +60,25 @@ class _LoginPageState extends State<LoginPage> {
 
     // 3. 从 secure storage 读取账号密码 + 记住密码标志
     final savedUser = await _storage.read(key: 'username');
-    final savedPass = await _storage.read(key: 'password');
     final savedRemember = await _storage.read(key: 'remember_me');
     final remember = savedRemember == 'true';
-    final hasStored = savedUser != null && savedPass != null;
+
+    // ✅ 有 token 才算“可快速登录”，不再看 password
+    final savedToken = await _storage.read(key: 'auth_token');
+    final hasToken = savedToken != null && savedToken.trim().isNotEmpty;
 
     if (!mounted) return;
 
     setState(() {
       _biometricAvailable = biometricAvailable;
-      _hasStoredCredential = hasStored;
+      _hasStoredCredential = hasToken; // ✅ 改成：是否有 token
       _rememberMe = remember;
       _biometricLabel = label;
 
-      _savedUsername = savedUser; // ⭐ 绑定账号名
+      _savedUsername = savedUser;
 
-      if (remember && hasStored) {
+      if (remember && savedUser != null) {
         _usernameCtrl.text = savedUser;
-        _passwordCtrl.text = savedPass;
       }
     });
   }
@@ -89,35 +90,38 @@ class _LoginPageState extends State<LoginPage> {
 
     final auth = Provider.of<AuthProvider>(context, listen: false);
 
-    await auth.login(username, password);
+    await auth.login(username, password, rememberMe: _rememberMe);
 
     if (!mounted) return;
 
     if (auth.error == null) {
+      await _storage.delete(key: 'require_biometric'); // ✅ 密码登录成功，同样解锁自动登录
+
       // 登录成功后根据“记住密码”状态存/删账号密码
       if (_rememberMe) {
         await _storage.write(key: 'username', value: username);
-        await _storage.write(key: 'password', value: password);
         await _storage.write(key: 'remember_me', value: 'true');
-
         setState(() {
           _savedUsername = username;
-          _hasStoredCredential = true;
         });
       } else {
         await _storage.delete(key: 'username');
-        await _storage.delete(key: 'password');
         await _storage.write(key: 'remember_me', value: 'false');
-
         setState(() {
           _savedUsername = null;
-          _hasStoredCredential = false;
         });
       }
 
+      // ✅ 登录成功后，AuthProvider 已经写入 auth_token，这里只需要刷新“是否可快速登录”
+      final savedToken = await _storage.read(key: 'auth_token');
+      setState(() {
+        _hasStoredCredential =
+            savedToken != null && savedToken.trim().isNotEmpty;
+      });
+
       // 有生物识别能力 + 勾了“记住密码”，给一个简单提示即可
       if (_biometricAvailable && _rememberMe) {
-        showSuccessSnackBar(context, '已记住密码，下次可以$_biometricLabel');
+        showSuccessSnackBar(context, '已记住账号，下次可以$_biometricLabel');
       }
 
       Navigator.pushReplacementNamed(context, '/home');
@@ -128,11 +132,12 @@ class _LoginPageState extends State<LoginPage> {
   Future<void> _biometricLogin() async {
     if (!_biometricAvailable || !_hasStoredCredential) return;
 
-    // double check：当前输入账号如果不是绑定账号，就不继续（按钮已经隐藏，这里只是再保险）
-    final inputUsername = _usernameCtrl.text.trim();
+    final inputUsername = _usernameCtrl.text.trim(); // ✅ 补上这一行
+
     if (_savedUsername != null &&
         inputUsername.isNotEmpty &&
         inputUsername != _savedUsername) {
+      showErrorSnackBar(context, '当前输入账号与已绑定账号不一致');
       return;
     }
 
@@ -147,24 +152,21 @@ class _LoginPageState extends State<LoginPage> {
 
       if (!didAuth) return;
 
-      final savedUser = await _storage.read(key: 'username');
-      final savedPass = await _storage.read(key: 'password');
-
-      if (savedUser == null || savedPass == null) return;
-
       final auth = Provider.of<AuthProvider>(context, listen: false);
-      await auth.login(savedUser, savedPass);
+
+      // ✅ 用 token 恢复登录（AuthProvider 内部会读 auth_token 并 /me 校验）
+      await auth.bootstrap(force: true);
 
       if (!mounted) return;
 
-      if (auth.error == null) {
+      if (auth.currentUser != null) {
+        await _storage.delete(key: 'require_biometric'); // ✅ 解锁自动登录
         Navigator.pushReplacementNamed(context, '/home');
       } else {
-        showErrorSnackBar(context, auth.error ?? '生物识别登录失败，请稍后再试');
+        showErrorSnackBar(context, '快速登录失败，请使用密码登录');
       }
     } catch (e) {
       if (!mounted) return;
-      // 这里一般是本地生物识别组件/系统异常
       showErrorSnackBar(context, e, fallback: '生物识别不可用，请稍后再试');
     }
   }
@@ -183,12 +185,7 @@ class _LoginPageState extends State<LoginPage> {
     final isDark = theme.brightness == Brightness.dark;
 
     // ⭐ 只有在：设备支持 + 有保存的账号密码 + 绑定账号存在 + 当前输入账号为空或等于绑定账号 时，才显示按钮
-    final inputName = _usernameCtrl.text.trim();
-    final canUseBiometric =
-        _biometricAvailable &&
-        _hasStoredCredential &&
-        _savedUsername != null &&
-        inputName == _savedUsername; // ⭐ 不再允许用户名为空时显示
+    final canUseBiometric = _biometricAvailable && _hasStoredCredential;
 
     return Scaffold(
       body: Container(
@@ -293,11 +290,10 @@ class _LoginPageState extends State<LoginPage> {
                                       // 2）取消“记住密码”勾选
                                       setState(() {
                                         _passwordCtrl.clear();
-                                        _rememberMe = false;
                                       });
                                     },
                                     decoration: InputDecoration(
-                                      labelText: '用户名',
+                                      labelText: '用户名 / 手机号',
                                       prefixIcon: const Icon(
                                         Icons.person_outline,
                                       ),
@@ -407,7 +403,7 @@ class _LoginPageState extends State<LoginPage> {
                                               });
                                             },
                                           ),
-                                          const Text('记住密码'),
+                                          const Text('记住账号'),
                                         ],
                                       ),
                                       TextButton(

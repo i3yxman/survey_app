@@ -10,7 +10,8 @@ import 'package:wechat_assets_picker/wechat_assets_picker.dart';
 import 'package:wechat_camera_picker/wechat_camera_picker.dart';
 
 import '../../models/api_models.dart';
-import '../../services/api_service.dart';
+import '../../repositories/questionnaire_repository.dart';
+import '../../repositories/submission_repository.dart';
 import '../../utils/error_message.dart';
 import '../../utils/snackbar.dart';
 import 'submission_comments_page.dart';
@@ -104,6 +105,8 @@ class SurveyFillPage extends StatefulWidget {
 
 class _SurveyFillPageState extends State<SurveyFillPage> {
   late final Assignment _assignment;
+  final _qRepo = QuestionnaireRepository();
+  final _subRepo = SubmissionRepository();
 
   QuestionnaireDto? _questionnaire;
   bool _loading = true;
@@ -229,12 +232,10 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     });
 
     try {
-      final api = ApiService();
-
       // 并行请求：问卷 + 该任务所有提交记录
       final results = await Future.wait([
-        api.fetchQuestionnaireDetail(qId),
-        api.getSubmissions(_assignment.id),
+        _qRepo.fetchDetail(qId),
+        _subRepo.getSubmissions(_assignment.id),
       ]);
 
       final q = results[0] as QuestionnaireDto;
@@ -277,11 +278,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
         _submissionStatus = latest?.status;
         _loading = false;
       });
-    } on ApiException catch (e) {
-      setState(() {
-        _loading = false;
-        _error = userMessageFrom(e, fallback: '加载问卷失败，请稍后重试');
-      });
     } catch (e) {
       setState(() {
         _loading = false;
@@ -307,15 +303,12 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     });
 
     try {
-      final api = ApiService();
-
-      // 草稿就是草稿，状态始终是 draft
-      final dto = await api.saveSubmission(
+      final dto = await _subRepo.saveSubmission(
         submissionId: _submissionId,
         assignmentId: _assignment.id,
         status: 'draft',
         answers: _answers,
-        includeUnanswered: false, // 草稿没必要传空题
+        includeUnanswered: false,
       );
 
       if (!mounted) return;
@@ -326,9 +319,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
       });
 
       showSuccessSnackBar(context, '草稿已保存');
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      showErrorSnackBar(context, e, fallback: '保存草稿失败，请稍后重试');
     } catch (e) {
       if (!mounted) return;
       showErrorSnackBar(context, e, fallback: '保存草稿失败，请稍后重试');
@@ -371,14 +361,11 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     });
 
     try {
-      final api = ApiService();
-
-      // 如果当前状态是待修改（needs_revision），这次就是“重新提交”
       final statusToSend = (_submissionStatus == 'needs_revision')
           ? 'resubmitted'
           : 'submitted';
 
-      final dto = await api.saveSubmission(
+      final dto = await _subRepo.saveSubmission(
         submissionId: _submissionId,
         assignmentId: _assignment.id,
         status: statusToSend,
@@ -394,9 +381,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
       });
 
       showSuccessSnackBar(context, '问卷已提交');
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      showErrorSnackBar(context, e, fallback: '提交失败，请稍后重试');
     } catch (e) {
       if (!mounted) return;
       showErrorSnackBar(context, e, fallback: '提交失败，请稍后重试');
@@ -515,7 +499,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
         final bytes = await file.readAsBytes();
         final filename = file.path.split('/').last;
 
-        final dto = await ApiService().uploadMedia(
+        final dto = await _subRepo.uploadMedia(
           questionId: q.id,
           mediaType: mediaType,
           fileBytes: bytes,
@@ -550,12 +534,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
           ? '成功上传 $successFiles 张图片'
           : '成功上传 $successFiles 段视频';
       showSuccessSnackBar(context, successMsg);
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _pendingUploads.remove(q.id);
-      });
-      showErrorSnackBar(context, e, fallback: '上传失败，请稍后重试');
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -577,7 +555,10 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     AnswerDraft draft,
     String mediaType,
   ) async {
-    if (_isReadOnly || draft.isUploadingMedia) return;
+    if (_isReadOnly ||
+        draft.isUploadingMedia ||
+        _pendingUploads[q.id]?.isNotEmpty == true)
+      return;
 
     final String? choice = await showModalBottomSheet<String>(
       context: context,
@@ -645,8 +626,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     _loadingMediaIds.addAll(needLoad);
 
     try {
-      final api = ApiService();
-      final list = await api.fetchMediaFilesByIds(needLoad);
+      final list = await _subRepo.fetchMediaFilesByIds(needLoad);
       if (!mounted) return;
       setState(() {
         for (final m in list) {
@@ -735,7 +715,11 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     }
 
     if (ids.isNotEmpty) {
-      _ensureMediaLoaded(ids);
+      // ✅ 不要在 build 过程中直接发请求；挪到下一帧，避免 build-loop / setState during build
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _ensureMediaLoaded(ids);
+      });
     }
 
     final mediaList = ids

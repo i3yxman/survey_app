@@ -1,3 +1,5 @@
+// lib/repositories/job_posting_repository.dart
+
 import '../models/api_models.dart';
 import '../services/api_service.dart';
 
@@ -5,7 +7,7 @@ class JobPostingRepository {
   final ApiService _api;
 
   JobPostingRepository({ApiService? apiService})
-      : _api = apiService ?? ApiService();
+    : _api = apiService ?? ApiService();
 
   /// 获取任务大厅列表
   Future<List<JobPosting>> fetchJobPostings() async {

@@ -3,9 +3,9 @@
 import 'package:flutter/material.dart';
 
 import '../../models/api_models.dart';
-import '../../services/api_service.dart';
 import '../../utils/error_message.dart';
 import '../../utils/snackbar.dart';
+import '../../repositories/submission_repository.dart';
 
 class SubmissionCommentsPage extends StatefulWidget {
   final int submissionId;
@@ -24,7 +24,7 @@ class SubmissionCommentsPage extends StatefulWidget {
 }
 
 class _SubmissionCommentsPageState extends State<SubmissionCommentsPage> {
-  final _api = ApiService();
+  final _repo = SubmissionRepository();
   final TextEditingController _inputController = TextEditingController();
 
   bool _loading = true;
@@ -65,15 +65,18 @@ class _SubmissionCommentsPageState extends State<SubmissionCommentsPage> {
     });
 
     try {
-      final list = await _api.fetchSubmissionComments(widget.submissionId);
+      final list = await _repo.fetchSubmissionComments(widget.submissionId);
+      if (!mounted) return;
       setState(() {
         _comments = list;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = userMessageFrom(e, fallback: '加载对话失败，请稍后再试');
       });
     } finally {
+      if (!mounted) return;
       setState(() {
         _loading = false;
       });
@@ -94,7 +97,7 @@ class _SubmissionCommentsPageState extends State<SubmissionCommentsPage> {
     });
 
     try {
-      final dto = await _api.createSubmissionComment(
+      final dto = await _repo.createSubmissionComment(
         submissionId: widget.submissionId,
         message: text,
       );

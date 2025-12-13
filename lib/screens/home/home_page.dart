@@ -25,11 +25,14 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     _pages = const [MyAssignmentsPage(), JobPostingsPage(), AccountPage()];
 
-    // 兜底：没登录，直接跳回登录页
+    // ✅ 兜底：如果没有 currentUser，就回登录页
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final auth = Provider.of<AuthProvider>(context, listen: false);
+
+      // ✅ Home 只相信“已校验过的登录态”，不看 token。
+      // Splash 已经 bootstrap(/me) 过了，这里只做兜底防御。
       if (!auth.isLoggedIn) {
-        Navigator.pushReplacementNamed(context, '/login');
+        Navigator.of(context).pushReplacementNamed('/login');
       }
     });
   }

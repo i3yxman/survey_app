@@ -1,10 +1,10 @@
 // lib/screens/splash/splash_page.dart
 
-import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../providers/auth_provider.dart';
 
@@ -20,6 +20,7 @@ class SplashPage extends StatefulWidget {
 }
 
 class _SplashPageState extends State<SplashPage> {
+  final _storage = const FlutterSecureStorage();
   @override
   void initState() {
     super.initState();
@@ -32,18 +33,29 @@ class _SplashPageState extends State<SplashPage> {
   Future<void> _decideNextPage() async {
     final auth = Provider.of<AuthProvider>(context, listen: false);
 
-    // 给个 800ms 的小停顿，让启动页“露个脸”
-    await Future.delayed(const Duration(milliseconds: 800));
+    // ✅ 关键兜底：如果要求生物识别，就绝对不能自动进首页
+    final requireBio =
+        (await _storage.read(key: 'require_biometric')) == 'true';
+    if (requireBio) {
+      await Future.delayed(const Duration(milliseconds: 800));
+      if (!mounted) return;
+      Navigator.of(context).pushReplacementNamed('/login');
+      return;
+    }
 
+    try {
+      // 冷启动恢复 token + /me 校验
+      await auth.bootstrap();
+    } catch (_) {
+      await auth.logout();
+    }
+
+    await Future.delayed(const Duration(milliseconds: 800));
     if (!mounted) return;
 
-    if (auth.isLoggedIn) {
-      // 已登录：进首页
-      Navigator.of(context).pushReplacementNamed('/home');
-    } else {
-      // 未登录：进登录页
-      Navigator.of(context).pushReplacementNamed('/login');
-    }
+    Navigator.of(
+      context,
+    ).pushReplacementNamed(auth.currentUser != null ? '/home' : '/login');
   }
 
   @override
@@ -95,8 +107,8 @@ class _SplashPageState extends State<SplashPage> {
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             color: (isDark
-                                    ? Colors.white.withValues(alpha: 0.08)
-                                    : Colors.black.withValues(alpha: 0.04)),
+                                ? Colors.white.withValues(alpha: 0.08)
+                                : Colors.black.withValues(alpha: 0.04)),
                           ),
                           child: Icon(
                             Icons.checklist_rtl,
@@ -116,8 +128,9 @@ class _SplashPageState extends State<SplashPage> {
                         Text(
                           'Souldigger Technology Co., Ltd.',
                           style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.textTheme.bodySmall?.color
-                                ?.withValues(alpha: 0.7),
+                            color: theme.textTheme.bodySmall?.color?.withValues(
+                              alpha: 0.7,
+                            ),
                           ),
                         ),
                         const SizedBox(height: 16),
@@ -142,8 +155,9 @@ class _SplashPageState extends State<SplashPage> {
                 child: Text(
                   '© ${DateTime.now().year} Souldigger',
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.textTheme.bodySmall?.color
-                        ?.withValues(alpha: 0.6),
+                    color: theme.textTheme.bodySmall?.color?.withValues(
+                      alpha: 0.6,
+                    ),
                   ),
                 ),
               ),

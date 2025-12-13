@@ -125,7 +125,7 @@ class _JobPostingsPageState extends State<JobPostingsPage> {
     }
   }
 
-  Widget _buildTrailing(JobPosting p) {
+  Widget _buildTrailing(JobPosting p, {required bool loading}) {
     final isPostingOpen = p.status == 'open';
     final appStatus = p.applicationStatus;
     final theme = Theme.of(context);
@@ -159,7 +159,7 @@ class _JobPostingsPageState extends State<JobPostingsPage> {
             ),
             const SizedBox(height: 6),
             OutlinedButton(
-              onPressed: () => _handleCancelApply(p),
+              onPressed: loading ? null : () => _handleCancelApply(p),
               style: OutlinedButton.styleFrom(
                 minimumSize: const Size(0, 32),
                 padding: const EdgeInsets.symmetric(
@@ -180,7 +180,7 @@ class _JobPostingsPageState extends State<JobPostingsPage> {
       width: trailingWidth,
       child: Center(
         child: ElevatedButton(
-          onPressed: () => _handleApply(p),
+          onPressed: loading ? null : () => _handleApply(p),
           style: ElevatedButton.styleFrom(
             minimumSize: const Size(0, 32),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -347,7 +347,7 @@ class _JobPostingsPageState extends State<JobPostingsPage> {
 
                       const SizedBox(width: 12),
 
-                      _buildTrailing(p),
+                      _buildTrailing(p, loading: provider.isLoading),
                     ],
                   ),
                 ),

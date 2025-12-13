@@ -5,7 +5,10 @@ import '../models/api_models.dart';
 
 /// AssignmentRepository —— “我的任务”所有业务
 class AssignmentRepository {
-  final ApiService _api = ApiService();
+  final ApiService _api;
+
+  AssignmentRepository({ApiService? apiService})
+    : _api = apiService ?? ApiService();
 
   /// 获取我的任务列表
   Future<List<Assignment>> fetchMyAssignments() {
@@ -20,10 +23,7 @@ class AssignmentRepository {
     required int assignmentId,
     bool confirm = false,
   }) {
-    return _api.cancelAssignment(
-      assignmentId: assignmentId,
-      confirm: confirm,
-    );
+    return _api.cancelAssignment(assignmentId: assignmentId, confirm: confirm);
   }
 
   /// 获取任务对应的提交记录

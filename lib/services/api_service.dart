@@ -36,8 +36,9 @@ class ApiException implements Exception {
       if (data is Map && data["detail"] != null) {
         final d = data["detail"];
         if (d is String) return d.trim();
-        if (d is Map && d["message"] is String)
+        if (d is Map && d["message"] is String) {
           return (d["message"] as String).trim();
+        }
       }
 
       // 3) DRF 字段校验错误 {field: ["..."]} 或 {field: "..."}
@@ -78,7 +79,7 @@ class ApiService {
   // ================================
   // 字段定义
   // ================================
-  String? _authBasic; // Basic Auth token
+  String? _authToken; // DRF TokenAuthentication: "Token <key>"
 
   http.Client _client;
 
@@ -135,33 +136,65 @@ class ApiService {
     _client = client;
   }
 
-  /// 手动设置 Basic Auth（测试时也可以用）
-  void setAuthBasic(String basic) {
-    _authBasic = basic;
-    _dio.options.headers['Authorization'] = basic;
+  /// 手动设置 Token（登录成功后会调用；测试时也可以用）
+  void setAuthToken(String token) {
+    var t = token.trim();
+
+    // ✅ 兼容后端直接返回 "Token xxx"
+    t = t.replaceFirst(RegExp(r'^Token\s+', caseSensitive: false), '');
+
+    _authToken = t;
+
+    if (t.isEmpty) {
+      _dio.options.headers.remove('Authorization');
+      return;
+    }
+
+    _dio.options.headers['Authorization'] = 'Token $t';
+  }
+
+  Map<String, String> _authHeaders({bool json = false}) {
+    final h = <String, String>{};
+    if (_authToken != null && _authToken!.isNotEmpty) {
+      h['Authorization'] = 'Token $_authToken';
+    }
+    if (json) h['Content-Type'] = 'application/json';
+    return h;
+  }
+
+  /// ✅ 是否已有 token
+  bool get hasToken => _authToken != null && _authToken!.isNotEmpty;
+
+  /// ✅ 清空 token（退出/过期）
+  void clearAuthToken() {
+    _authToken = null;
+    _dio.options.headers.remove('Authorization');
   }
 
   /// 登录接口（POST /api/accounts/login/）
-  Future<LoginResult> login(String username, String password) async {
+  Future<LoginResult> login(String identifier, String password) async {
     final url = Uri.parse('${Env.apiBaseUrl}/api/accounts/login/');
 
     final resp = await _client.post(
       url,
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'username': username, 'password': password}),
+      body: jsonEncode({'identifier': identifier, 'password': password}),
     );
 
     if (resp.statusCode != 200) {
       _throwHttpResponseError(resp, fallback: "登录失败");
     }
 
-    // 登录成功后，后端不返回 token，而是继续使用 Basic Auth
-    final basicAuth =
-        'Basic ${base64Encode(utf8.encode('$username:$password'))}';
-    _authBasic = basicAuth;
-    _dio.options.headers['Authorization'] = basicAuth;
+    final data = jsonDecode(resp.body);
+    final result = LoginResult.fromJson(data);
 
-    return LoginResult.fromJson(jsonDecode(resp.body));
+    // ✅ 后端返回 token：保存并用于后续所有请求
+    if (result.token.isEmpty) {
+      throw ApiException(userMessage: "登录失败：未返回 token");
+    }
+    setAuthToken(result.token);
+
+    return result;
   }
 
   /// 修改密码
@@ -173,10 +206,7 @@ class ApiService {
 
     final resp = await _client.post(
       url,
-      headers: {
-        'Authorization': _authBasic ?? '',
-        'Content-Type': 'application/json',
-      },
+      headers: _authHeaders(json: true),
       body: jsonEncode({
         'old_password': oldPassword,
         'new_password': newPassword,
@@ -219,14 +249,29 @@ class ApiService {
     return '操作成功';
   }
 
+  /// 获取当前登录用户信息（GET /api/accounts/me/）
+  Future<Map<String, dynamic>> me() async {
+    final url = Uri.parse('${Env.apiBaseUrl}/api/accounts/me/');
+
+    final resp = await _client.get(url, headers: _authHeaders());
+
+    if (resp.statusCode != 200) {
+      _throwHttpResponseError(resp, fallback: "获取用户信息失败");
+    }
+
+    final data = jsonDecode(resp.body);
+    if (data is! Map<String, dynamic>) {
+      throw ApiException(userMessage: "获取用户信息失败：返回格式错误");
+    }
+    return data;
+  }
+
   /// 获取“我的任务”
   Future<List<Assignment>> getMyAssignments() async {
     final url = Uri.parse('${Env.apiBaseUrl}/api/assignments/my-assignments/');
+    final headers = _authHeaders();
 
-    final resp = await _client.get(
-      url,
-      headers: {'Authorization': _authBasic ?? ''},
-    );
+    final resp = await _client.get(url, headers: headers);
 
     if (resp.statusCode != 200) {
       _throwHttpResponseError(resp, fallback: "获取任务列表失败");
@@ -239,11 +284,9 @@ class ApiService {
   /// 获取 JobPosting 列表（任务大厅）
   Future<List<JobPosting>> getJobPostings() async {
     final url = Uri.parse('${Env.apiBaseUrl}/api/assignments/job-postings/');
+    final headers = _authHeaders();
 
-    final resp = await _client.get(
-      url,
-      headers: {'Authorization': _authBasic ?? ''},
-    );
+    final resp = await _client.get(url, headers: headers);
 
     if (resp.statusCode != 200) {
       _throwHttpResponseError(resp, fallback: "获取任务大厅失败");
@@ -260,13 +303,7 @@ class ApiService {
     );
 
     try {
-      final resp = await _client.post(
-        url,
-        headers: {
-          'Authorization': _authBasic ?? '',
-          'Content-Type': 'application/json',
-        },
-      );
+      final resp = await _client.post(url, headers: _authHeaders());
 
       if (resp.statusCode < 200 || resp.statusCode >= 300) {
         _throwHttpResponseError(resp, fallback: "任务申请失败");
@@ -288,13 +325,7 @@ class ApiService {
     );
 
     try {
-      final resp = await _client.post(
-        url,
-        headers: {
-          'Authorization': _authBasic ?? '',
-          'Content-Type': 'application/json',
-        },
-      );
+      final resp = await _client.post(url, headers: _authHeaders());
 
       if (resp.statusCode < 200 || resp.statusCode >= 300) {
         _throwHttpResponseError(resp, fallback: "撤销申请失败");
@@ -327,7 +358,7 @@ class ApiService {
       final resp = await _dio.post(
         url,
         data: formData,
-        options: Options(headers: {'Authorization': _authBasic ?? ''}),
+        options: Options(headers: _authHeaders()),
         onSendProgress: (sent, total) {
           onProgress?.call(sent, total);
         },
@@ -363,10 +394,7 @@ class ApiService {
     );
 
     try {
-      final resp = await _client.get(
-        url,
-        headers: {'Authorization': _authBasic ?? ''},
-      );
+      final resp = await _client.get(url, headers: _authHeaders());
 
       if (resp.statusCode != 200) {
         _throwHttpResponseError(resp, fallback: "获取媒体信息失败");
@@ -393,13 +421,7 @@ class ApiService {
     );
 
     try {
-      final resp = await _client.get(
-        url,
-        headers: {
-          'Authorization': _authBasic ?? '',
-          'Content-Type': 'application/json',
-        },
-      );
+      final resp = await _client.get(url, headers: _authHeaders());
 
       if (resp.statusCode != 200) {
         _throwHttpResponseError(resp, fallback: "加载沟通记录失败");
@@ -431,10 +453,7 @@ class ApiService {
     try {
       final resp = await _client.post(
         url,
-        headers: {
-          'Authorization': _authBasic ?? '',
-          'Content-Type': 'application/json',
-        },
+        headers: _authHeaders(json: true),
         body: jsonEncode({'message': message}),
       );
 
@@ -459,10 +478,7 @@ class ApiService {
       '${Env.apiBaseUrl}/api/assignments/my-assignments/$assignmentId/cancel/?confirm=${confirm ? "true" : "false"}',
     );
 
-    final resp = await _client.post(
-      url,
-      headers: {'Authorization': _authBasic ?? ''},
-    );
+    final resp = await _client.post(url, headers: _authHeaders());
 
     if (resp.statusCode != 200) {
       _throwHttpResponseError(resp, fallback: "取消任务失败");
@@ -478,10 +494,7 @@ class ApiService {
       '${Env.apiBaseUrl}/api/assignments/submissions/?assignment=$assignmentId',
     );
 
-    final resp = await _client.get(
-      url,
-      headers: {'Authorization': _authBasic ?? ''},
-    );
+    final resp = await _client.get(url, headers: _authHeaders());
 
     if (resp.statusCode != 200) {
       _throwHttpResponseError(resp, fallback: "获取提交记录失败");
@@ -497,10 +510,7 @@ class ApiService {
       '${Env.apiBaseUrl}/api/survey/questionnaires/$questionnaireId/',
     );
 
-    final resp = await _client.get(
-      url,
-      headers: {'Authorization': _authBasic ?? ''},
-    );
+    final resp = await _client.get(url, headers: _authHeaders());
 
     if (resp.statusCode != 200) {
       _throwHttpResponseError(resp, fallback: "获取问卷失败");
@@ -562,10 +572,7 @@ class ApiService {
       'answers': answerList,
     });
 
-    final headers = <String, String>{
-      'Authorization': _authBasic ?? '',
-      'Content-Type': 'application/json',
-    };
+    final headers = _authHeaders(json: true);
 
     final resp = submissionId == null
         ? await _client.post(url, headers: headers, body: body)

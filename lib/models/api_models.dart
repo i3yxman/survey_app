@@ -2,26 +2,31 @@
 
 /// 登录成功返回的数据结构
 class LoginResult {
+  final String token; // ✅ 新增：DRF Token
   final int id;
   final String username;
   final String role;
-  final String status;
+
+  // 下面这些是你旧接口里可能用到的字段，先保留为可选，避免别处爆炸
+  final String? status;
   final String? applicationStatus;
 
   LoginResult({
+    required this.token,
     required this.id,
     required this.username,
     required this.role,
-    required this.status,
+    this.status,
     this.applicationStatus,
   });
 
   factory LoginResult.fromJson(Map<String, dynamic> json) {
     return LoginResult(
-      id: json['id'] as int,
-      username: json['username'] as String,
-      role: json['role'] as String? ?? '',
-      status: json['status'] as String? ?? '',
+      token: (json['token'] as String?) ?? '',
+      id: (json['id'] as int?) ?? 0,
+      username: (json['username'] as String?) ?? '',
+      role: (json['role'] as String?) ?? '',
+      status: json['status'] as String?,
       applicationStatus: json['application_status'] as String?,
     );
   }
