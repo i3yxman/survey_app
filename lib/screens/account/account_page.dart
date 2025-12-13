@@ -45,9 +45,7 @@ class AccountPage extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('我的账号'),
-      ),
+      appBar: AppBar(title: const Text('我的账号')),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),
@@ -59,8 +57,9 @@ class AccountPage extends StatelessWidget {
                   children: [
                     CircleAvatar(
                       radius: 24,
-                      backgroundColor:
-                          theme.colorScheme.primary.withOpacity(0.12),
+                      backgroundColor: theme.colorScheme.primary.withValues(
+                        alpha: 0.12,
+                      ),
                       child: Icon(
                         Icons.person,
                         color: theme.colorScheme.primary,
@@ -76,10 +75,7 @@ class AccountPage extends StatelessWidget {
                             style: theme.textTheme.titleMedium,
                           ),
                           const SizedBox(height: 4),
-                          Text(
-                            '评估员',
-                            style: theme.textTheme.bodySmall,
-                          ),
+                          Text('评估员', style: theme.textTheme.bodySmall),
                         ],
                       ),
                     ),

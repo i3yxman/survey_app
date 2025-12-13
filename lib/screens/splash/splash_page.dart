@@ -78,12 +78,12 @@ class _SplashPageState extends State<SplashPage> {
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(32),
                       color: isDark
-                          ? Colors.white.withOpacity(0.08)
-                          : Colors.white.withOpacity(0.9),
+                          ? Colors.white.withValues(alpha: 0.08)
+                          : Colors.white.withValues(alpha: 0.9),
                       border: Border.all(
                         color: isDark
-                            ? Colors.white.withOpacity(0.15)
-                            : Colors.black.withOpacity(0.06),
+                            ? Colors.white.withValues(alpha: 0.15)
+                            : Colors.black.withValues(alpha: 0.06),
                       ),
                     ),
                     child: Column(
@@ -95,8 +95,8 @@ class _SplashPageState extends State<SplashPage> {
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             color: (isDark
-                                    ? Colors.white.withOpacity(0.08)
-                                    : Colors.black.withOpacity(0.04)),
+                                    ? Colors.white.withValues(alpha: 0.08)
+                                    : Colors.black.withValues(alpha: 0.04)),
                           ),
                           child: Icon(
                             Icons.checklist_rtl,
@@ -117,7 +117,7 @@ class _SplashPageState extends State<SplashPage> {
                           'Souldigger Technology Co., Ltd.',
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.textTheme.bodySmall?.color
-                                ?.withOpacity(0.7),
+                                ?.withValues(alpha: 0.7),
                           ),
                         ),
                         const SizedBox(height: 16),
@@ -143,7 +143,7 @@ class _SplashPageState extends State<SplashPage> {
                   '© ${DateTime.now().year} Souldigger',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.textTheme.bodySmall?.color
-                        ?.withOpacity(0.6),
+                        ?.withValues(alpha: 0.6),
                   ),
                 ),
               ),

@@ -223,8 +223,8 @@ class _LoginPageState extends State<LoginPage> {
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: (isDark
-                              ? Colors.white.withOpacity(0.06)
-                              : Colors.black.withOpacity(0.04)),
+                              ? Colors.white.withValues(alpha: 0.06)
+                              : Colors.black.withValues(alpha: 0.04)),
                         ),
                         child: Icon(
                           Icons.checklist_rtl,
@@ -244,8 +244,8 @@ class _LoginPageState extends State<LoginPage> {
                       Text(
                         '登录后即可查看当前任务和任务大厅',
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.textTheme.bodySmall?.color?.withOpacity(
-                            0.65,
+                          color: theme.textTheme.bodySmall?.color?.withValues(
+                            alpha: 0.65,
                           ),
                         ),
                         textAlign: TextAlign.center,
@@ -267,12 +267,12 @@ class _LoginPageState extends State<LoginPage> {
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(24),
                                 color: isDark
-                                    ? Colors.white.withOpacity(0.06)
-                                    : Colors.white.withOpacity(0.82),
+                                    ? Colors.white.withValues(alpha: 0.06)
+                                    : Colors.white.withValues(alpha: 0.82),
                                 border: Border.all(
                                   color: isDark
-                                      ? Colors.white.withOpacity(0.10)
-                                      : Colors.black.withOpacity(0.04),
+                                      ? Colors.white.withValues(alpha: 0.10)
+                                      : Colors.black.withValues(alpha: 0.04),
                                 ),
                               ),
                               child: Column(
@@ -303,7 +303,7 @@ class _LoginPageState extends State<LoginPage> {
                                       ),
                                       filled: true,
                                       fillColor: isDark
-                                          ? Colors.white.withOpacity(0.02)
+                                          ? Colors.white.withValues(alpha: 0.02)
                                           : Colors.white,
                                       contentPadding:
                                           const EdgeInsets.symmetric(
@@ -316,7 +316,9 @@ class _LoginPageState extends State<LoginPage> {
                                       enabledBorder: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(12),
                                         borderSide: BorderSide(
-                                          color: Colors.grey.withOpacity(0.3),
+                                          color: Colors.grey.withValues(
+                                            alpha: 0.3,
+                                          ),
                                         ),
                                       ),
                                       focusedBorder: OutlineInputBorder(
@@ -360,7 +362,7 @@ class _LoginPageState extends State<LoginPage> {
                                       ),
                                       filled: true,
                                       fillColor: isDark
-                                          ? Colors.white.withOpacity(0.02)
+                                          ? Colors.white.withValues(alpha: 0.02)
                                           : Colors.white,
                                       contentPadding:
                                           const EdgeInsets.symmetric(
@@ -373,7 +375,9 @@ class _LoginPageState extends State<LoginPage> {
                                       enabledBorder: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(12),
                                         borderSide: BorderSide(
-                                          color: Colors.grey.withOpacity(0.3),
+                                          color: Colors.grey.withValues(
+                                            alpha: 0.3,
+                                          ),
                                         ),
                                       ),
                                       focusedBorder: OutlineInputBorder(
@@ -485,8 +489,8 @@ class _LoginPageState extends State<LoginPage> {
                       Text(
                         'Powered by Souldigger Technology Co., Ltd.',
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.textTheme.bodySmall?.color?.withOpacity(
-                            0.6,
+                          color: theme.textTheme.bodySmall?.color?.withValues(
+                            alpha: 0.6,
                           ),
                         ),
                       ),

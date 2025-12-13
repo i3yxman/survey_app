@@ -9,10 +9,7 @@ class AppTheme {
   static const _backgroundLight = Color(0xFFF2F2F7);
 
   static ThemeData get lightTheme {
-    final base = ThemeData(
-      useMaterial3: true,
-      brightness: Brightness.light,
-    );
+    final base = ThemeData(useMaterial3: true, brightness: Brightness.light);
 
     final scheme = ColorScheme.fromSeed(
       seedColor: _primaryBlue,
@@ -44,9 +41,7 @@ class AppTheme {
       cardTheme: CardThemeData(
         color: scheme.surface,
         elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       ),
 
@@ -90,13 +85,15 @@ class AppTheme {
       // 输入框：半透明浅灰填充 + 14 圆角，和你现在登录页一致
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: scheme.surfaceVariant.withOpacity(0.6),
+        fillColor: scheme.surfaceContainerHighest.withValues(alpha: 0.6),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide.none,
         ),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 10,
+        ),
         labelStyle: base.textTheme.bodyMedium?.copyWith(
           color: Colors.grey[700],
         ),
@@ -123,18 +120,12 @@ class AppTheme {
       ),
 
       // 分割线更细一点
-      dividerTheme: const DividerThemeData(
-        space: 1,
-        thickness: 0.5,
-      ),
+      dividerTheme: const DividerThemeData(space: 1, thickness: 0.5),
     );
   }
 
   static ThemeData get darkTheme {
-    final base = ThemeData(
-      useMaterial3: true,
-      brightness: Brightness.dark,
-    );
+    final base = ThemeData(useMaterial3: true, brightness: Brightness.dark);
 
     final scheme = ColorScheme.fromSeed(
       seedColor: _primaryBlue,
@@ -147,10 +138,10 @@ class AppTheme {
 
     return base.copyWith(
       colorScheme: scheme,
-      scaffoldBackgroundColor: scheme.background,
+      scaffoldBackgroundColor: scheme.surface,
 
       appBarTheme: AppBarTheme(
-        backgroundColor: scheme.background,
+        backgroundColor: scheme.surface,
         foregroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
@@ -164,9 +155,7 @@ class AppTheme {
       cardTheme: CardThemeData(
         color: scheme.surface,
         elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       ),
 
@@ -195,20 +184,20 @@ class AppTheme {
       ),
 
       textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(
-          foregroundColor: _primaryBlue,
-        ),
+        style: TextButton.styleFrom(foregroundColor: _primaryBlue),
       ),
 
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: scheme.surfaceVariant.withOpacity(0.7),
+        fillColor: scheme.surfaceContainerHighest.withValues(alpha: 0.7),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide.none,
         ),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 10,
+        ),
       ),
 
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
@@ -223,10 +212,7 @@ class AppTheme {
         showUnselectedLabels: true,
       ),
 
-      dividerTheme: const DividerThemeData(
-        space: 1,
-        thickness: 0.5,
-      ),
+      dividerTheme: const DividerThemeData(space: 1, thickness: 0.5),
     );
   }
 }

@@ -35,13 +35,7 @@ class _ChinesePickerTextDelegate extends AssetPickerTextDelegate {
   String get select => '选择';
 
   @override
-  String get selectMore => '继续选择';
-
-  @override
   String get emptyList => '暂无内容';
-
-  @override
-  String get viewing => '正在查看';
 
   @override
   String get original => '原图';
@@ -81,9 +75,6 @@ class _ChinesePickerTextDelegate extends AssetPickerTextDelegate {
 
   @override
   String get loadFailed => '加载失败';
-
-  @override
-  String get durationLabel => '时长';
 
   @override
   String get edit => '编辑';
@@ -716,6 +707,9 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
       },
     );
 
+    // ⭐ async gap 之后，先检查 mounted，防止页面已经销毁
+    if (!mounted) return;
+
     if (confirmed != true) return;
 
     setState(() {
@@ -1182,7 +1176,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                 Text(
                   subtitleText,
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onPrimary.withOpacity(0.8),
+                    color: theme.colorScheme.onPrimary.withValues(alpha: 0.8),
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,

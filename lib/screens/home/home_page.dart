@@ -23,11 +23,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    _pages = const [
-      MyAssignmentsPage(),
-      JobPostingsPage(),
-      AccountPage(),
-    ];
+    _pages = const [MyAssignmentsPage(), JobPostingsPage(), AccountPage()];
 
     // 兜底：没登录，直接跳回登录页
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -40,13 +36,8 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _pages,
-      ),
+      body: IndexedStack(index: _currentIndex, children: _pages),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: (idx) {

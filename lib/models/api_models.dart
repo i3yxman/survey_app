@@ -34,8 +34,12 @@ class Assignment {
   final String createdAt;
 
   final int? jobPosting;
+
+  /// 后端字段叫 project
   final int? project;
   final String? projectName;
+
+  /// 后端字段叫 questionnaire
   final int? questionnaire;
   final String? questionnaireTitle;
   final String? clientName;
@@ -54,9 +58,14 @@ class Assignment {
     required this.status,
     required this.createdAt,
     this.jobPosting,
-    this.project,
+
+    /// 新写法：同时兼容 project / projectId 两个名字
+    int? project,
+    int? projectId,
     this.projectName,
-    this.questionnaire,
+
+    int? questionnaire,
+    int? questionnaireId,
     this.questionnaireTitle,
     this.clientName,
     this.store,
@@ -67,10 +76,11 @@ class Assignment {
     this.storeCity,
     this.storeLatitude,
     this.storeLongitude,
-  });
+  }) : project = project ?? projectId,
+       questionnaire = questionnaire ?? questionnaireId;
 
   factory Assignment.fromJson(Map<String, dynamic> json) {
-    double? _toDouble(dynamic v) {
+    double? toDouble(dynamic v) {
       if (v == null) return null;
       if (v is double) return v;
       if (v is int) return v.toDouble();
@@ -83,6 +93,8 @@ class Assignment {
       createdAt: json['created_at']?.toString() ?? '',
 
       jobPosting: json['job_posting'] as int?,
+
+      // 这里仍然用后端原始字段名 project / questionnaire
       project: json['project'] as int?,
       projectName: json['project_name']?.toString(),
       questionnaire: json['questionnaire'] as int?,
@@ -95,8 +107,8 @@ class Assignment {
       storeName: json['store_name']?.toString(),
       storeAddress: json['store_address']?.toString(),
       storeCity: json['store_city']?.toString(),
-      storeLatitude: _toDouble(json['store_latitude']),
-      storeLongitude: _toDouble(json['store_longitude']),
+      storeLatitude: toDouble(json['store_latitude']),
+      storeLongitude: toDouble(json['store_longitude']),
     );
   }
 
@@ -265,8 +277,9 @@ class QuestionnaireDto {
 
   factory QuestionnaireDto.fromJson(Map<String, dynamic> json) {
     final questionsJson = json['questions'] as List<dynamic>? ?? [];
-    final questions =
-        questionsJson.map((e) => QuestionDto.fromJson(e)).toList();
+    final questions = questionsJson
+        .map((e) => QuestionDto.fromJson(e))
+        .toList();
 
     return QuestionnaireDto(
       id: json['id'] as int,
@@ -325,12 +338,10 @@ class QuestionDto {
 
   factory QuestionDto.fromJson(Map<String, dynamic> json) {
     final optionsJson = json['options'] as List<dynamic>? ?? [];
-    final options =
-        optionsJson.map((e) => OptionDto.fromJson(e)).toList();
+    final options = optionsJson.map((e) => OptionDto.fromJson(e)).toList();
 
     final logicsJson = json['outgoing_logics'] as List<dynamic>? ?? [];
-    final logics =
-        logicsJson.map((e) => QuestionLogicDto.fromJson(e)).toList();
+    final logics = logicsJson.map((e) => QuestionLogicDto.fromJson(e)).toList();
 
     return QuestionDto(
       id: json['id'] as int,
@@ -383,10 +394,8 @@ class AnswerDto {
   });
 
   factory AnswerDto.fromJson(Map<String, dynamic> json) {
-    final selectedIdsJson =
-        json['selected_option_ids'] as List<dynamic>? ?? [];
-    final mediaIdsJson =
-        json['media_file_ids'] as List<dynamic>? ?? [];
+    final selectedIdsJson = json['selected_option_ids'] as List<dynamic>? ?? [];
+    final mediaIdsJson = json['media_file_ids'] as List<dynamic>? ?? [];
 
     return AnswerDto(
       questionId: json['question'] as int,
@@ -394,10 +403,8 @@ class AnswerDto {
       numberValue: (json['number_value'] != null)
           ? double.tryParse(json['number_value'].toString())
           : null,
-      selectedOptionIds:
-          selectedIdsJson.map((e) => e as int).toList(),
-      mediaFileIds:
-          mediaIdsJson.map((e) => e as int).toList(),
+      selectedOptionIds: selectedIdsJson.map((e) => e as int).toList(),
+      mediaFileIds: mediaIdsJson.map((e) => e as int).toList(),
     );
   }
 }
@@ -421,8 +428,7 @@ class SubmissionDto {
 
   factory SubmissionDto.fromJson(Map<String, dynamic> json) {
     final answersJson = json['answers'] as List<dynamic>? ?? [];
-    final answers =
-        answersJson.map((e) => AnswerDto.fromJson(e)).toList();
+    final answers = answersJson.map((e) => AnswerDto.fromJson(e)).toList();
 
     return SubmissionDto(
       id: json['id'] as int,
@@ -460,9 +466,9 @@ class SubmissionCommentDto {
   final int submission;
   final int author;
   final String authorName;
-  final String role;      // "reviewer" / "evaluator"
+  final String role; // "reviewer" / "evaluator"
   final String message;
-  final String type;      // "normal" / "system"
+  final String type; // "normal" / "system"
   final DateTime createdAt;
 
   SubmissionCommentDto({
@@ -525,8 +531,8 @@ class AnswerDraft {
     List<int>? mediaFileIds,
     this.isUploadingMedia = false,
     this.mediaError,
-  })  : selectedOptionIds = selectedOptionIds ?? [],
-        mediaFileIds = mediaFileIds ?? [];
+  }) : selectedOptionIds = selectedOptionIds ?? [],
+       mediaFileIds = mediaFileIds ?? [];
 }
 
 /// 取消任务接口的返回

@@ -110,7 +110,7 @@ class AuthProvider extends ChangeNotifier {
     try {
       final msg = await _api.requestPasswordReset(identifier: trimmed);
       return msg;
-    } on ApiException catch (e) {
+    } on ApiException {
       // ApiService 已经封装成“人话”了，直接抛出去
       rethrow;
     } catch (e) {

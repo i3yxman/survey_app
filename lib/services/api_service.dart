@@ -1,7 +1,6 @@
 // lib/services/api_service.dart
 
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -16,11 +15,7 @@ class ApiException implements Exception {
   final dynamic body; // Map/List/String
   final String userMessage; // 给用户看的“人话”
 
-  ApiException({
-    required this.userMessage,
-    this.statusCode,
-    this.body,
-  });
+  ApiException({required this.userMessage, this.statusCode, this.body});
 
   String get message => userMessage; // ✅ 新增：兼容旧代码里 e.message
 
@@ -41,7 +36,8 @@ class ApiException implements Exception {
       if (data is Map && data["detail"] != null) {
         final d = data["detail"];
         if (d is String) return d.trim();
-        if (d is Map && d["message"] is String) return (d["message"] as String).trim();
+        if (d is Map && d["message"] is String)
+          return (d["message"] as String).trim();
       }
 
       // 3) DRF 字段校验错误 {field: ["..."]} 或 {field: "..."}
@@ -77,9 +73,7 @@ class ApiService {
   factory ApiService() => _instance;
 
   // 构造函数：同时初始化 http.Client 和 Dio
-  ApiService._internal()
-      : _client = http.Client(),
-        _dio = Dio();
+  ApiService._internal() : _client = http.Client(), _dio = Dio();
 
   // ================================
   // 字段定义
@@ -91,7 +85,6 @@ class ApiService {
   // Dio：非 late、非可空，构造函数里直接 new
   final Dio _dio;
 
-
   dynamic _tryDecode(String s) {
     final t = s.trim();
     if (t.isEmpty) return null;
@@ -102,7 +95,10 @@ class ApiService {
     }
   }
 
-  Never _throwHttpResponseError(http.Response resp, {String fallback = "请求失败"}) {
+  Never _throwHttpResponseError(
+    http.Response resp, {
+    String fallback = "请求失败",
+  }) {
     final data = _tryDecode(resp.body);
     final msg = ApiException.extractUserMessage(data);
 
@@ -151,13 +147,8 @@ class ApiService {
 
     final resp = await _client.post(
       url,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        'username': username,
-        'password': password,
-      }),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'username': username, 'password': password}),
     );
 
     if (resp.statusCode != 200) {
@@ -198,9 +189,7 @@ class ApiService {
   }
 
   /// 忘记密码：提交账号标识（用户名 / 手机），让后端返回下一步提示
-  Future<String> requestPasswordReset({
-    required String identifier,
-  }) async {
+  Future<String> requestPasswordReset({required String identifier}) async {
     final url = Uri.parse('${Env.apiBaseUrl}/api/accounts/forgot-password/');
 
     final resp = await _client.post(
@@ -236,9 +225,7 @@ class ApiService {
 
     final resp = await _client.get(
       url,
-      headers: {
-        'Authorization': _authBasic ?? '',
-      },
+      headers: {'Authorization': _authBasic ?? ''},
     );
 
     if (resp.statusCode != 200) {
@@ -251,14 +238,11 @@ class ApiService {
 
   /// 获取 JobPosting 列表（任务大厅）
   Future<List<JobPosting>> getJobPostings() async {
-    final url =
-        Uri.parse('${Env.apiBaseUrl}/api/assignments/job-postings/');
+    final url = Uri.parse('${Env.apiBaseUrl}/api/assignments/job-postings/');
 
     final resp = await _client.get(
       url,
-      headers: {
-        'Authorization': _authBasic ?? '',
-      },
+      headers: {'Authorization': _authBasic ?? ''},
     );
 
     if (resp.statusCode != 200) {
@@ -336,21 +320,14 @@ class ApiService {
     final formData = FormData.fromMap({
       'media_type': mediaType,
       'question': questionId.toString(),
-      'file': MultipartFile.fromBytes(
-        fileBytes,
-        filename: filename,
-      ),
+      'file': MultipartFile.fromBytes(fileBytes, filename: filename),
     });
 
     try {
       final resp = await _dio.post(
         url,
         data: formData,
-        options: Options(
-          headers: {
-            'Authorization': _authBasic ?? '',
-          },
-        ),
+        options: Options(headers: {'Authorization': _authBasic ?? ''}),
         onSendProgress: (sent, total) {
           onProgress?.call(sent, total);
         },
@@ -408,7 +385,9 @@ class ApiService {
   /// ================== 提交对话（审核沟通）相关接口 ==================
 
   /// 获取某个 submission 的对话列表（审核沟通 + 系统消息）
-  Future<List<SubmissionCommentDto>> fetchSubmissionComments(int submissionId) async {
+  Future<List<SubmissionCommentDto>> fetchSubmissionComments(
+    int submissionId,
+  ) async {
     final url = Uri.parse(
       '${Env.apiBaseUrl}/api/assignments/submissions/$submissionId/comments/',
     );
@@ -482,9 +461,7 @@ class ApiService {
 
     final resp = await _client.post(
       url,
-      headers: {
-        'Authorization': _authBasic ?? '',
-      },
+      headers: {'Authorization': _authBasic ?? ''},
     );
 
     if (resp.statusCode != 200) {
@@ -498,13 +475,12 @@ class ApiService {
   /// 获取某个任务的提交记录
   Future<List<SubmissionDto>> getSubmissions(int assignmentId) async {
     final url = Uri.parse(
-        '${Env.apiBaseUrl}/api/assignments/submissions/?assignment=$assignmentId');
+      '${Env.apiBaseUrl}/api/assignments/submissions/?assignment=$assignmentId',
+    );
 
     final resp = await _client.get(
       url,
-      headers: {
-        'Authorization': _authBasic ?? '',
-      },
+      headers: {'Authorization': _authBasic ?? ''},
     );
 
     if (resp.statusCode != 200) {
@@ -516,17 +492,14 @@ class ApiService {
   }
 
   /// 获取问卷详情（题目 + 选项 + 跳转逻辑）
-  Future<QuestionnaireDto> fetchQuestionnaireDetail(
-      int questionnaireId) async {
+  Future<QuestionnaireDto> fetchQuestionnaireDetail(int questionnaireId) async {
     final url = Uri.parse(
       '${Env.apiBaseUrl}/api/survey/questionnaires/$questionnaireId/',
     );
 
     final resp = await _client.get(
       url,
-      headers: {
-        'Authorization': _authBasic ?? '',
-      },
+      headers: {'Authorization': _authBasic ?? ''},
     );
 
     if (resp.statusCode != 200) {
@@ -546,9 +519,7 @@ class ApiService {
     bool includeUnanswered = false,
   }) async {
     final url = submissionId == null
-        ? Uri.parse(
-            '${Env.apiBaseUrl}/api/assignments/submissions/',
-          )
+        ? Uri.parse('${Env.apiBaseUrl}/api/assignments/submissions/')
         : Uri.parse(
             '${Env.apiBaseUrl}/api/assignments/submissions/$submissionId/',
           );
@@ -559,17 +530,15 @@ class ApiService {
     answers.forEach((questionId, draft) {
       final hasData =
           (draft.textValue != null && draft.textValue!.trim().isNotEmpty) ||
-              draft.numberValue != null ||
-              draft.selectedOptionIds.isNotEmpty ||
-              draft.mediaFileIds.isNotEmpty;
+          draft.numberValue != null ||
+          draft.selectedOptionIds.isNotEmpty ||
+          draft.mediaFileIds.isNotEmpty;
 
       if (!includeUnanswered && !hasData) {
         return;
       }
 
-      final m = <String, dynamic>{
-        'question': questionId,
-      };
+      final m = <String, dynamic>{'question': questionId};
 
       if (draft.textValue != null) {
         m['text_value'] = draft.textValue;

@@ -75,7 +75,9 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
             Text(
               '出于安全考虑，请先输入原密码，然后设置一个新的登录密码。',
               style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.textTheme.bodyMedium?.color?.withOpacity(0.7),
+                color: theme.textTheme.bodyMedium?.color?.withValues(
+                  alpha: 0.7,
+                ),
               ),
             ),
             const SizedBox(height: 24),

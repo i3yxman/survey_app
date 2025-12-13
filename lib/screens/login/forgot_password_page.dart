@@ -61,7 +61,6 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
       appBar: AppBar(title: const Text('忘记密码')),
@@ -112,7 +111,9 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
               Text(
                 '管理员审核后会通过企业微信、电话或其他方式联系你完成重置。',
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.textTheme.bodySmall?.color?.withOpacity(0.7),
+                  color: theme.textTheme.bodySmall?.color?.withValues(
+                    alpha: 0.7,
+                  ),
                 ),
               ),
             ],

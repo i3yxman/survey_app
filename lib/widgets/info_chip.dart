@@ -21,21 +21,17 @@ class InfoChip extends StatelessWidget {
     final chip = Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface.withOpacity(0.9),
+        color: theme.colorScheme.surface.withValues(alpha: 0.9),
         borderRadius: BorderRadius.circular(999),
         border: Border.all(
-          color: theme.colorScheme.outline.withOpacity(0.12),
+          color: theme.colorScheme.outline.withValues(alpha: 0.12),
         ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Icon(
-            icon,
-            size: 14,
-            color: theme.colorScheme.primary,
-          ),
+          Icon(icon, size: 14, color: theme.colorScheme.primary),
           const SizedBox(width: 4),
           // 关键改动：用 Flexible 包一下文本，让它在父级的宽度内自动换行
           Flexible(
