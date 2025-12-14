@@ -426,8 +426,8 @@ class _LoginPageState extends State<LoginPage> {
                                     Expanded(
                                       child: Text(
                                         _biometricAvailable
-                                            ? '下次使用生物识别登录'
-                                            : '本设备不支持生物识别',
+                                            ? '下次使用面容/指纹识别登录'
+                                            : '未开启面容/指纹识别',
                                         style: TextStyle(
                                           color: _biometricAvailable
                                               ? theme
