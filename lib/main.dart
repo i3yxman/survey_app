@@ -5,7 +5,7 @@ import 'package:provider/provider.dart';
 
 import 'app.dart';
 
-void main() {
+Future<void> main() async {
   // 确保 binding 初始化
   WidgetsFlutterBinding.ensureInitialized();
 

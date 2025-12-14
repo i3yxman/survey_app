@@ -885,6 +885,15 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.7.7"
+  tpns_flutter_plugin:
+    dependency: "direct main"
+    description:
+      path: "."
+      ref: "V1.3.6"
+      resolved-ref: ed5df75158e21cee1c72e53f26a68f260ac10501
+      url: "https://github.com/TencentCloud/TPNS-Flutter-Plugin"
+    source: git
+    version: "1.3.6"
   typed_data:
     dependency: transitive
     description:

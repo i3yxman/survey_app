@@ -1,4 +1,6 @@
 # Miscellaneous
+env/*.json
+.env
 *.class
 *.log
 *.pyc

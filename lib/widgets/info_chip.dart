@@ -1,3 +1,5 @@
+// lib/widgets/info_chip.dart
+
 import 'package:flutter/material.dart';
 
 class InfoChip extends StatelessWidget {

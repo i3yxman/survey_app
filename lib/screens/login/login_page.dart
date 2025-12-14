@@ -1,13 +1,13 @@
 // lib/screens/login/login_page.dart
 
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:local_auth/local_auth.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../utils/snackbar.dart';
+import '../../widgets/glass_card.dart';
+import '../../widgets/app_logo_header.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -20,19 +20,20 @@ class _LoginPageState extends State<LoginPage> {
   final _usernameCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
 
-  final _storage = const FlutterSecureStorage();
+  final _usernameFocus = FocusNode();
+  final _passwordFocus = FocusNode();
+
   final _localAuth = LocalAuthentication();
 
   bool _obscurePassword = true;
   bool _rememberMe = false;
+  bool _enableBiometric = false;
 
-  bool _biometricAvailable = false; // 设备是否支持生物识别
-  bool _hasStoredCredential = false; // 是否存过账号密码
-
+  bool _biometricAvailable = false;
+  bool _hasStoredCredential = false;
   String _biometricLabel = '使用指纹 / 面容快速登录';
 
-  // ⭐ 当前这套“记住密码 + 生物识别”绑定的账号
-  String? _savedUsername;
+  String? _boundUsername;
 
   @override
   void initState() {
@@ -40,461 +41,494 @@ class _LoginPageState extends State<LoginPage> {
     _loadStoredData();
   }
 
-  /// 读取本地存储 & 检查设备是否支持面容/指纹
   Future<void> _loadStoredData() async {
-    // 1. 检查生物识别支持情况
-    final canCheck = await _localAuth.canCheckBiometrics;
-    final supported = await _localAuth.isDeviceSupported();
-    final biometricAvailable = canCheck && supported;
+    final auth = context.read<AuthProvider>();
 
-    // 2. 获取设备支持的具体生物识别类型
+    bool biometricAvailable = false;
     String label = '使用指纹 / 面容快速登录';
-    if (biometricAvailable) {
-      final types = await _localAuth.getAvailableBiometrics();
-      if (types.contains(BiometricType.face)) {
-        label = '使用面容 ID 快速登录';
-      } else if (types.contains(BiometricType.fingerprint)) {
-        label = '使用指纹快速登录';
+
+    try {
+      final canCheck = await _localAuth.canCheckBiometrics;
+      final supported = await _localAuth.isDeviceSupported();
+      biometricAvailable = canCheck && supported;
+
+      if (biometricAvailable) {
+        final types = await _localAuth.getAvailableBiometrics();
+        if (types.contains(BiometricType.face)) {
+          label = '使用面容 ID 快速登录';
+        } else if (types.contains(BiometricType.fingerprint)) {
+          label = '使用指纹快速登录';
+        }
       }
-    }
+    } catch (_) {}
 
-    // 3. 从 secure storage 读取账号密码 + 记住密码标志
-    final savedUser = await _storage.read(key: 'username');
-    final savedRemember = await _storage.read(key: 'remember_me');
-    final remember = savedRemember == 'true';
+    final hasToken = await auth.hasToken();
+    final bioEnabled = await auth.biometricEnabled();
+    final remember = await auth.rememberAccount();
+    final savedUser = await auth.savedUsername();
+    final bioUser = await auth.biometricUsername();
 
-    // ✅ 有 token 才算“可快速登录”，不再看 password
-    final savedToken = await _storage.read(key: 'auth_token');
-    final hasToken = savedToken != null && savedToken.trim().isNotEmpty;
+    final bound = (bioUser?.trim().isNotEmpty ?? false)
+        ? bioUser!.trim()
+        : (savedUser?.trim().isNotEmpty ?? false)
+        ? savedUser!.trim()
+        : null;
 
     if (!mounted) return;
-
     setState(() {
       _biometricAvailable = biometricAvailable;
-      _hasStoredCredential = hasToken; // ✅ 改成：是否有 token
-      _rememberMe = remember;
       _biometricLabel = label;
+      _hasStoredCredential = hasToken;
+      _enableBiometric = bioEnabled;
+      _rememberMe = remember;
+      _boundUsername = bound;
 
-      _savedUsername = savedUser;
-
-      if (remember && savedUser != null) {
-        _usernameCtrl.text = savedUser;
+      if (remember && savedUser != null && savedUser.trim().isNotEmpty) {
+        _usernameCtrl.text = savedUser.trim();
+      } else if (!remember && bound != null && bound.isNotEmpty) {
+        _usernameCtrl.text = bound;
       }
     });
   }
 
-  /// 普通密码登录
   Future<void> _handleLogin() async {
     final username = _usernameCtrl.text.trim();
     final password = _passwordCtrl.text;
 
-    final auth = Provider.of<AuthProvider>(context, listen: false);
+    final canUseBiometric =
+        _biometricAvailable && _enableBiometric && _hasStoredCredential;
 
-    await auth.login(username, password, rememberMe: _rememberMe);
+    if (password.trim().isEmpty && canUseBiometric) {
+      await _biometricLogin();
+      return;
+    }
+
+    final auth = context.read<AuthProvider>();
+    await auth.login(
+      username,
+      password,
+      rememberAccount: _rememberMe,
+      enableBiometric: _enableBiometric,
+    );
 
     if (!mounted) return;
 
     if (auth.error == null) {
-      await _storage.delete(key: 'require_biometric'); // ✅ 密码登录成功，同样解锁自动登录
+      await _loadStoredData();
+      if (!mounted) return;
 
-      // 登录成功后根据“记住密码”状态存/删账号密码
-      if (_rememberMe) {
-        await _storage.write(key: 'username', value: username);
-        await _storage.write(key: 'remember_me', value: 'true');
-        setState(() {
-          _savedUsername = username;
-        });
-      } else {
-        await _storage.delete(key: 'username');
-        await _storage.write(key: 'remember_me', value: 'false');
-        setState(() {
-          _savedUsername = null;
-        });
-      }
-
-      // ✅ 登录成功后，AuthProvider 已经写入 auth_token，这里只需要刷新“是否可快速登录”
-      final savedToken = await _storage.read(key: 'auth_token');
-      setState(() {
-        _hasStoredCredential =
-            savedToken != null && savedToken.trim().isNotEmpty;
-      });
-
-      // 有生物识别能力 + 勾了“记住密码”，给一个简单提示即可
-      if (_biometricAvailable && _rememberMe) {
-        showSuccessSnackBar(context, '已记住账号，下次可以$_biometricLabel');
+      if (_biometricAvailable && _enableBiometric) {
+        showSuccessSnackBar(context, '已开启生物识别登录');
       }
 
       Navigator.pushReplacementNamed(context, '/home');
     }
   }
 
-  /// 生物识别快速登录（使用已保存的账号密码）
   Future<void> _biometricLogin() async {
-    if (!_biometricAvailable || !_hasStoredCredential) return;
+    final canUseBiometric =
+        _biometricAvailable && _enableBiometric && _hasStoredCredential;
 
-    final inputUsername = _usernameCtrl.text.trim(); // ✅ 补上这一行
+    if (!canUseBiometric) {
+      showErrorSnackBar(context, '未开启生物识别或尚未登录过');
+      return;
+    }
 
-    if (_savedUsername != null &&
+    final inputUsername = _usernameCtrl.text.trim();
+    if (_boundUsername != null &&
+        _boundUsername!.trim().isNotEmpty &&
         inputUsername.isNotEmpty &&
-        inputUsername != _savedUsername) {
+        inputUsername != _boundUsername) {
       showErrorSnackBar(context, '当前输入账号与已绑定账号不一致');
       return;
     }
 
     try {
-      final didAuth = await _localAuth.authenticate(
+      final ok = await _localAuth.authenticate(
         localizedReason: '请验证指纹 / 面容以快速登录',
         options: const AuthenticationOptions(
           biometricOnly: true,
           stickyAuth: true,
         ),
       );
+      if (!ok) return;
 
-      if (!didAuth) return;
-
-      final auth = Provider.of<AuthProvider>(context, listen: false);
-
-      // ✅ 用 token 恢复登录（AuthProvider 内部会读 auth_token 并 /me 校验）
-      await auth.bootstrap(force: true);
+      final auth = context.read<AuthProvider>();
+      await auth.bootstrap();
 
       if (!mounted) return;
 
       if (auth.currentUser != null) {
-        await _storage.delete(key: 'require_biometric'); // ✅ 解锁自动登录
         Navigator.pushReplacementNamed(context, '/home');
       } else {
         showErrorSnackBar(context, '快速登录失败，请使用密码登录');
       }
     } catch (e) {
       if (!mounted) return;
-      showErrorSnackBar(context, e, fallback: '生物识别不可用，请稍后再试');
+      showErrorSnackBar(context, e, fallback: '生物识别不可用');
     }
+  }
+
+  void _dismissKeyboard() {
+    FocusScope.of(context).unfocus();
+  }
+
+  InputDecoration _iosFieldDecoration({
+    required bool isDark,
+    required String hint,
+    required IconData icon,
+    Widget? suffixIcon,
+  }) {
+    final fill = isDark
+        ? Colors.white.withValues(alpha: 0.10)
+        : Colors.black.withValues(alpha: 0.06);
+
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: TextStyle(
+        color: Theme.of(
+          context,
+        ).textTheme.bodyMedium?.color?.withValues(alpha: 0.6),
+      ),
+      floatingLabelBehavior: FloatingLabelBehavior.never,
+      prefixIcon: Icon(icon),
+      suffixIcon: suffixIcon,
+      filled: true,
+      fillColor: fill,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide.none,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(
+          width: 1,
+          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.35),
+        ),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+    );
   }
 
   @override
   void dispose() {
     _usernameCtrl.dispose();
     _passwordCtrl.dispose();
+    _usernameFocus.dispose();
+    _passwordFocus.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final auth = Provider.of<AuthProvider>(context);
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final auth = context.watch<AuthProvider>();
 
-    // ⭐ 只有在：设备支持 + 有保存的账号密码 + 绑定账号存在 + 当前输入账号为空或等于绑定账号 时，才显示按钮
-    final canUseBiometric = _biometricAvailable && _hasStoredCredential;
+    final canUseBiometric =
+        _biometricAvailable && _enableBiometric && _hasStoredCredential;
 
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: isDark
-                ? const [Color(0xFF000000), Color(0xFF050506)]
-                : const [Color(0xFFF2F2F7), Color(0xFFE5E5EA)],
+      body: GestureDetector(
+        onTap: _dismissKeyboard,
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: isDark
+                  ? const [Color(0xFF000000), Color(0xFF050506)]
+                  : const [Color(0xFFF2F2F7), Color(0xFFE5E5EA)],
+            ),
           ),
-        ),
-        child: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final isWide = constraints.maxWidth >= 600;
-              final cardWidth = isWide ? 480.0 : double.infinity;
+          child: SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final isWide = constraints.maxWidth >= 600;
+                final cardWidth = isWide ? 480.0 : double.infinity;
 
-              return Center(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 16,
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // 顶部图标 + 文案
-                      Container(
-                        width: 64,
-                        height: 64,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: (isDark
-                              ? Colors.white.withValues(alpha: 0.06)
-                              : Colors.black.withValues(alpha: 0.04)),
+                return Stack(
+                  children: [
+                    Center(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 16,
                         ),
-                        child: Icon(
-                          Icons.checklist_rtl,
-                          size: 32,
-                          color: theme.colorScheme.primary,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        '评估员登录',
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: -0.3,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '登录后即可查看当前任务和任务大厅',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.textTheme.bodySmall?.color?.withValues(
-                            alpha: 0.65,
-                          ),
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 32),
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(maxWidth: cardWidth),
+                          child: GlassCard(
+                            borderRadius: 32,
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const AppLogoHeader(spacingAfter: 18),
 
-                      // 中间玻璃质感卡片
-                      ConstrainedBox(
-                        constraints: BoxConstraints(maxWidth: cardWidth),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(24),
-                          child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 20,
-                                vertical: 18,
-                              ),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(24),
-                                color: isDark
-                                    ? Colors.white.withValues(alpha: 0.06)
-                                    : Colors.white.withValues(alpha: 0.82),
-                                border: Border.all(
-                                  color: isDark
-                                      ? Colors.white.withValues(alpha: 0.10)
-                                      : Colors.black.withValues(alpha: 0.04),
+                                // 用户名
+                                TextField(
+                                  controller: _usernameCtrl,
+                                  focusNode: _usernameFocus,
+                                  textInputAction: TextInputAction.next,
+                                  keyboardType: TextInputType.text,
+                                  onChanged: (_) =>
+                                      context.read<AuthProvider>().clearError(),
+                                  onSubmitted: (_) {
+                                    FocusScope.of(
+                                      context,
+                                    ).requestFocus(_passwordFocus);
+                                  },
+                                  decoration: _iosFieldDecoration(
+                                    isDark: isDark,
+                                    hint: '用户名 / 手机号',
+                                    icon: Icons.person_outline,
+                                  ),
                                 ),
-                              ),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  // 用户名
-                                  TextField(
-                                    controller: _usernameCtrl,
-                                    onChanged: (_) {
-                                      // 清掉登录错误
-                                      Provider.of<AuthProvider>(
-                                        context,
-                                        listen: false,
-                                      ).clearError();
+                                const SizedBox(height: 12),
 
-                                      // ⭐ 用户名一旦改动：
-                                      // 1）清空当前密码输入
-                                      // 2）取消“记住密码”勾选
-                                      setState(() {
-                                        _passwordCtrl.clear();
-                                      });
-                                    },
-                                    decoration: InputDecoration(
-                                      labelText: '用户名 / 手机号',
-                                      prefixIcon: const Icon(
-                                        Icons.person_outline,
+                                // 密码
+                                TextField(
+                                  controller: _passwordCtrl,
+                                  focusNode: _passwordFocus,
+                                  obscureText: _obscurePassword,
+                                  textInputAction: TextInputAction.done,
+                                  onChanged: (_) =>
+                                      context.read<AuthProvider>().clearError(),
+                                  onSubmitted: (_) => _handleLogin(),
+                                  decoration: _iosFieldDecoration(
+                                    isDark: isDark,
+                                    hint: '密码',
+                                    icon: Icons.lock_outline,
+                                    suffixIcon: IconButton(
+                                      icon: Icon(
+                                        _obscurePassword
+                                            ? Icons.visibility_off
+                                            : Icons.visibility,
                                       ),
-                                      filled: true,
-                                      fillColor: isDark
-                                          ? Colors.white.withValues(alpha: 0.02)
-                                          : Colors.white,
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 12,
-                                          ),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      enabledBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                        borderSide: BorderSide(
-                                          color: Colors.grey.withValues(
-                                            alpha: 0.3,
-                                          ),
-                                        ),
-                                      ),
-                                      focusedBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                        borderSide: BorderSide(
-                                          color: theme.colorScheme.primary,
-                                          width: 1.4,
-                                        ),
-                                      ),
+                                      onPressed: () {
+                                        setState(() {
+                                          _obscurePassword = !_obscurePassword;
+                                        });
+                                      },
                                     ),
                                   ),
-                                  const SizedBox(height: 16),
+                                ),
 
-                                  // 密码 + 显示/隐藏
-                                  TextField(
-                                    controller: _passwordCtrl,
-                                    obscureText: _obscurePassword,
-                                    onChanged: (_) {
-                                      Provider.of<AuthProvider>(
-                                        context,
-                                        listen: false,
-                                      ).clearError();
-                                    },
-                                    decoration: InputDecoration(
-                                      labelText: '密码',
-                                      prefixIcon: const Icon(
-                                        Icons.lock_outline,
-                                      ),
-                                      suffixIcon: IconButton(
-                                        icon: Icon(
-                                          _obscurePassword
-                                              ? Icons.visibility_off
-                                              : Icons.visibility,
-                                        ),
-                                        onPressed: () {
-                                          setState(() {
-                                            _obscurePassword =
-                                                !_obscurePassword;
-                                          });
-                                        },
-                                      ),
-                                      filled: true,
-                                      fillColor: isDark
-                                          ? Colors.white.withValues(alpha: 0.02)
-                                          : Colors.white,
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 12,
-                                          ),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      enabledBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                        borderSide: BorderSide(
-                                          color: Colors.grey.withValues(
-                                            alpha: 0.3,
-                                          ),
-                                        ),
-                                      ),
-                                      focusedBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                        borderSide: BorderSide(
-                                          color: theme.colorScheme.primary,
-                                          width: 1.4,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
+                                const SizedBox(height: 10),
 
-                                  const SizedBox(height: 8),
-
-                                  // 记住密码 + 忘记密码
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Checkbox(
-                                            value: _rememberMe,
-                                            onChanged: (v) {
-                                              setState(() {
-                                                _rememberMe = v ?? false;
-                                              });
-                                            },
-                                          ),
-                                          const Text('记住账号'),
-                                        ],
-                                      ),
-                                      TextButton(
-                                        onPressed: () {
-                                          Navigator.pushNamed(
-                                            context,
-                                            '/forgot-password',
-                                          );
-                                        },
-                                        child: const Text(
-                                          '忘记密码？',
-                                          style: TextStyle(color: Colors.grey),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-
-                                  const SizedBox(height: 8),
-
-                                  // 错误提示
-                                  if (auth.error != null)
-                                    Align(
-                                      alignment: Alignment.centerLeft,
+                                // 错误提示（iOS inline 风格）
+                                if (auth.error != null) ...[
+                                  Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: Padding(
+                                      padding: const EdgeInsets.only(top: 4),
                                       child: Text(
                                         auth.error!,
-                                        style: const TextStyle(
-                                          color: Colors.redAccent,
+                                        style: TextStyle(
+                                          color: Colors.redAccent.withValues(
+                                            alpha: 0.95,
+                                          ),
                                           fontSize: 12,
                                         ),
                                       ),
                                     ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                ],
 
-                                  const SizedBox(height: 16),
+                                // 记住账号 + 忘记密码（Switch.adaptive）
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Switch.adaptive(
+                                          value: _rememberMe,
+                                          onChanged: (v) async {
+                                            setState(() => _rememberMe = v);
 
-                                  // 登录按钮
-                                  auth.loading
-                                      ? const SizedBox(
-                                          height: 44,
-                                          width: 44,
-                                          child:
-                                              CircularProgressIndicator.adaptive(
-                                                strokeWidth: 2,
-                                              ),
-                                        )
-                                      : SizedBox(
-                                          width: double.infinity,
-                                          height: 44,
-                                          child: ElevatedButton(
-                                            onPressed: _handleLogin,
-                                            style: ElevatedButton.styleFrom(
-                                              elevation: 0,
-                                              shape: RoundedRectangleBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(12),
-                                              ),
-                                            ),
-                                            child: const Text('登录'),
-                                          ),
+                                            await context
+                                                .read<AuthProvider>()
+                                                .setRememberAccount(
+                                                  v,
+                                                  username: _usernameCtrl.text,
+                                                );
+
+                                            await _loadStoredData();
+                                          },
                                         ),
+                                        const SizedBox(width: 6),
+                                        const Text('记住账号'),
+                                      ],
+                                    ),
+                                    TextButton(
+                                      onPressed: () => Navigator.pushNamed(
+                                        context,
+                                        '/forgot-password',
+                                      ),
+                                      style: TextButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 6,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        '忘记密码？',
+                                        style: TextStyle(
+                                          color: theme.colorScheme.primary
+                                              .withValues(alpha: 0.85),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
 
-                                  const SizedBox(height: 16),
+                                // 生物识别开关（Switch.adaptive）
+                                Row(
+                                  children: [
+                                    Switch.adaptive(
+                                      value: _enableBiometric,
+                                      onChanged: _biometricAvailable
+                                          ? (v) async {
+                                              if (v &&
+                                                  _usernameCtrl.text
+                                                      .trim()
+                                                      .isEmpty) {
+                                                showErrorSnackBar(
+                                                  context,
+                                                  '请先输入用户名，再开启生物识别',
+                                                );
+                                                return;
+                                              }
 
-                                  // 生物识别按钮（仅当设备支持 & 已记住密码 & 账号匹配时显示）
-                                  if (canUseBiometric)
-                                    OutlinedButton.icon(
-                                      onPressed: _biometricLogin,
+                                              setState(
+                                                () => _enableBiometric = v,
+                                              );
+
+                                              await context
+                                                  .read<AuthProvider>()
+                                                  .setBiometricEnabled(
+                                                    v,
+                                                    username:
+                                                        _usernameCtrl.text,
+                                                  );
+
+                                              await _loadStoredData();
+                                            }
+                                          : null,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        _biometricAvailable
+                                            ? '下次使用生物识别登录'
+                                            : '本设备不支持生物识别',
+                                        style: TextStyle(
+                                          color: _biometricAvailable
+                                              ? theme
+                                                    .textTheme
+                                                    .bodyMedium
+                                                    ?.color
+                                              : theme
+                                                    .textTheme
+                                                    .bodyMedium
+                                                    ?.color
+                                                    ?.withValues(alpha: 0.5),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+
+                                const SizedBox(height: 14),
+
+                                // 登录按钮（大圆角 iOS 风格）
+                                SizedBox(
+                                  width: double.infinity,
+                                  height: 52,
+                                  child: ElevatedButton(
+                                    onPressed: auth.loading
+                                        ? null
+                                        : _handleLogin,
+                                    style: ElevatedButton.styleFrom(
+                                      elevation: 0,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(18),
+                                      ),
+                                    ),
+                                    child: auth.loading
+                                        ? const SizedBox(
+                                            width: 22,
+                                            height: 22,
+                                            child:
+                                                CircularProgressIndicator.adaptive(
+                                                  strokeWidth: 2,
+                                                ),
+                                          )
+                                        : const Text(
+                                            '登录',
+                                            style: TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                  ),
+                                ),
+
+                                const SizedBox(height: 12),
+
+                                // 生物识别快速登录（次要按钮）
+                                if (canUseBiometric)
+                                  SizedBox(
+                                    width: double.infinity,
+                                    height: 48,
+                                    child: OutlinedButton.icon(
+                                      onPressed: auth.loading
+                                          ? null
+                                          : _biometricLogin,
                                       icon: const Icon(Icons.fingerprint),
                                       label: Text(_biometricLabel),
+                                      style: OutlinedButton.styleFrom(
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            18,
+                                          ),
+                                        ),
+                                      ),
                                     ),
-                                ],
-                              ),
+                                  ),
+                              ],
                             ),
                           ),
                         ),
                       ),
+                    ),
 
-                      const SizedBox(height: 24),
-
-                      Text(
-                        'Powered by Souldigger Technology Co., Ltd.',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.textTheme.bodySmall?.color?.withValues(
-                            alpha: 0.6,
+                    // 底部 © 不动
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 24,
+                      child: Center(
+                        child: Text(
+                          '© ${DateTime.now().year} Souldigger',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.textTheme.bodySmall?.color?.withValues(
+                              alpha: 0.6,
+                            ),
                           ),
                         ),
                       ),
-                    ],
-                  ),
-                ),
-              );
-            },
+                    ),
+                  ],
+                );
+              },
+            ),
           ),
         ),
       ),
