@@ -470,7 +470,6 @@ class ApiService {
   Future<SubmissionDto> saveSubmission({
     int? submissionId,
     required int assignmentId,
-    required String status, // 'draft' / 'submitted'
     required Map<int, AnswerDraft> answers,
     bool includeUnanswered = false,
   }) async {
@@ -492,17 +491,14 @@ class ApiService {
       if (draft.selectedOptionIds.isNotEmpty) {
         m['selected_option_ids'] = draft.selectedOptionIds;
       }
-      if (draft.mediaFileIds.isNotEmpty)
+      if (draft.mediaFileIds.isNotEmpty) {
         m['media_file_ids'] = draft.mediaFileIds;
+      }
 
       answerList.add(m);
     });
 
-    final payload = {
-      'assignment': assignmentId,
-      'status': status,
-      'answers': answerList,
-    };
+    final payload = {'assignment': assignmentId, 'answers': answerList};
 
     try {
       final path = submissionId == null
@@ -527,6 +523,21 @@ class ApiService {
       _throwDioError(e, fallback: "保存失败");
     } catch (e) {
       throw ApiException(userMessage: "保存失败，请稍后重试", body: e.toString());
+    }
+  }
+
+  Future<Map<String, dynamic>> submitSubmission(int submissionId) async {
+    try {
+      final resp = await _dio.post(
+        '/api/assignments/submissions/$submissionId/submit/',
+      );
+      final data = _normalizeData(resp.data);
+      if (data is Map<String, dynamic>) return data;
+      return {};
+    } on DioException catch (e) {
+      _throwDioError(e, fallback: "提交失败");
+    } catch (e) {
+      throw ApiException(userMessage: "提交失败，请稍后重试", body: e.toString());
     }
   }
 }

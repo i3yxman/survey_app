@@ -3,6 +3,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/assignment_provider.dart';
+import '../../providers/job_postings_provider.dart';
 
 import '../assignments/my_assignments_page.dart';
 import '../job_postings/job_postings_page.dart';
@@ -44,9 +46,17 @@ class _HomePageState extends State<HomePage> {
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: (idx) {
+          if (idx == _currentIndex) return;
+
           setState(() {
             _currentIndex = idx;
           });
+
+          if (idx == 0) {
+            context.read<AssignmentProvider>().loadAssignments();
+          } else if (idx == 1) {
+            context.read<JobPostingsProvider>().loadJobPostings();
+          }
         },
         items: const [
           BottomNavigationBarItem(

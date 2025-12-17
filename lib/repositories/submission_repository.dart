@@ -18,17 +18,19 @@ class SubmissionRepository {
   Future<SubmissionDto> saveSubmission({
     int? submissionId,
     required int assignmentId,
-    required String status, // 'draft' / 'submitted' / 'resubmitted'
     required Map<int, AnswerDraft> answers,
     bool includeUnanswered = false,
   }) {
     return _api.saveSubmission(
       submissionId: submissionId,
       assignmentId: assignmentId,
-      status: status,
       answers: answers,
       includeUnanswered: includeUnanswered,
     );
+  }
+
+  Future<Map<String, dynamic>> submitSubmission(int submissionId) {
+    return _api.submitSubmission(submissionId);
   }
 
   /// 上传媒体（带进度）

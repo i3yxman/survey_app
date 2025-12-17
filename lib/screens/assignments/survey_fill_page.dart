@@ -306,7 +306,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
       final dto = await _subRepo.saveSubmission(
         submissionId: _submissionId,
         assignmentId: _assignment.id,
-        status: 'draft',
         answers: _answers,
         includeUnanswered: false,
       );
@@ -361,23 +360,33 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     });
 
     try {
-      final statusToSend = (_submissionStatus == 'needs_revision')
-          ? 'resubmitted'
-          : 'submitted';
+      // ① 如果还没有 submission，先创建一条 draft（POST /submissions/）
+      if (_submissionId == null) {
+        final created = await _subRepo.saveSubmission(
+          submissionId: null,
+          assignmentId: _assignment.id,
+          answers: _answers,
+          includeUnanswered: false,
+        );
+        _submissionId = created.id;
+      } else {
+        // ② 已有 submission：先把最新答案保存进去（PUT /submissions/{id}/）
+        await _subRepo.saveSubmission(
+          submissionId: _submissionId,
+          assignmentId: _assignment.id,
+          answers: _answers,
+          includeUnanswered: false,
+        );
+      }
 
-      final dto = await _subRepo.saveSubmission(
-        submissionId: _submissionId,
-        assignmentId: _assignment.id,
-        status: statusToSend,
-        answers: _answers,
-        includeUnanswered: false,
-      );
+      // ③ 真正提交：POST /submissions/{id}/submit/
+      final resp = await _subRepo.submitSubmission(_submissionId!);
+      final newStatus = (resp['new_status'] as String?) ?? '';
 
       if (!mounted) return;
       setState(() {
-        _submissionId = dto.id;
-        _submissionStatus = dto.status;
-        _shouldRefreshOnPop = true; // 提交成功后，需要刷新列表
+        _submissionStatus = newStatus; // ✅ 这句决定你是否只读
+        _shouldRefreshOnPop = true;
       });
 
       showSuccessSnackBar(context, '问卷已提交');
@@ -557,8 +566,9 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
   ) async {
     if (_isReadOnly ||
         draft.isUploadingMedia ||
-        _pendingUploads[q.id]?.isNotEmpty == true)
+        _pendingUploads[q.id]?.isNotEmpty == true) {
       return;
+    }
 
     final String? choice = await showModalBottomSheet<String>(
       context: context,
@@ -1479,7 +1489,7 @@ class _InlineVideoPlayerState extends State<_InlineVideoPlayer> {
   @override
   void initState() {
     super.initState();
-    _controller = VideoPlayerController.network(widget.videoUrl)
+    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl))
       ..initialize().then((_) {
         if (!mounted) return;
         setState(() {
@@ -1533,7 +1543,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   @override
   void initState() {
     super.initState();
-    _controller = VideoPlayerController.network(widget.videoUrl)
+    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl))
       ..initialize().then((_) {
         if (!mounted) return;
         setState(() {

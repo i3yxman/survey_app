@@ -15,6 +15,7 @@ import 'providers/auth_provider.dart';
 import 'providers/assignment_provider.dart';
 import 'providers/job_postings_provider.dart';
 import 'providers/location_provider.dart';
+import 'main.dart';
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -35,10 +36,9 @@ class MyApp extends StatelessWidget {
         darkTheme: AppTheme.darkTheme,
         themeMode: ThemeMode.system,
 
-        /// ⭐ 关键：不再指定 initialRoute='/login'，
-        /// 让应用从 SplashPage 启动，由 Splash 决定去登录还是首页
-        home: const SplashPage(),
+        navigatorObservers: [routeObserver],
 
+        home: const SplashPage(),
         routes: {
           '/login': (_) => const LoginPage(),
           '/home': (_) => const HomePage(),

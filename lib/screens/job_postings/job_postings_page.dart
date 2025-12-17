@@ -13,6 +13,7 @@ import '../../services/api_service.dart';
 import '../../widgets/info_chip.dart';
 import '../../utils/location_utils.dart';
 import '../../utils/snackbar.dart';
+import '../../main.dart';
 
 class JobPostingsPage extends StatefulWidget {
   const JobPostingsPage({super.key});
@@ -21,7 +22,7 @@ class JobPostingsPage extends StatefulWidget {
   State<JobPostingsPage> createState() => _JobPostingsPageState();
 }
 
-class _JobPostingsPageState extends State<JobPostingsPage> {
+class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
   @override
   void initState() {
     super.initState();
@@ -29,6 +30,28 @@ class _JobPostingsPageState extends State<JobPostingsPage> {
       context.read<JobPostingsProvider>().loadJobPostings();
       context.read<LocationProvider>().ensureLocation(); // ⭐ 全局定位
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    final route = ModalRoute.of(context);
+    if (route != null) {
+      routeObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void didPopNext() {
+    context.read<JobPostingsProvider>().loadJobPostings();
+    context.read<LocationProvider>().ensureLocation();
+  }
+
+  @override
+  void dispose() {
+    routeObserver.unsubscribe(this);
+    super.dispose();
   }
 
   Future<void> _refresh() async {

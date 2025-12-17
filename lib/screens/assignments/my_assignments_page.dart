@@ -13,6 +13,7 @@ import '../../services/api_service.dart';
 import '../../widgets/info_chip.dart';
 import '../../utils/location_utils.dart';
 import '../../utils/snackbar.dart';
+import '../../main.dart';
 
 /// 把后端的状态英文码映射成前端展示用的中文文案
 String statusLabel(String status) {
@@ -41,7 +42,7 @@ class MyAssignmentsPage extends StatefulWidget {
   State<MyAssignmentsPage> createState() => _MyAssignmentsPageState();
 }
 
-class _MyAssignmentsPageState extends State<MyAssignmentsPage> {
+class _MyAssignmentsPageState extends State<MyAssignmentsPage> with RouteAware {
   @override
   void initState() {
     super.initState();
@@ -64,6 +65,28 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> {
     double? storeLng,
   ) {
     return formatStoreDistance(loc.position, storeLat, storeLng);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    final route = ModalRoute.of(context);
+    if (route != null) {
+      routeObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void didPopNext() {
+    context.read<AssignmentProvider>().loadAssignments();
+    context.read<LocationProvider>().ensureLocation();
+  }
+
+  @override
+  void dispose() {
+    routeObserver.unsubscribe(this);
+    super.dispose();
   }
 
   /// 导航：保持原来的 Apple Maps / Google Maps 逻辑

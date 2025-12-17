@@ -1,7 +1,5 @@
 // lib/screens/splash/splash_page.dart
 
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:local_auth/local_auth.dart';
