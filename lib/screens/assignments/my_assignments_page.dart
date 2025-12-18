@@ -70,9 +70,8 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> with RouteAware {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-
     final route = ModalRoute.of(context);
-    if (route != null) {
+    if (route is PageRoute) {
       routeObserver.subscribe(this, route);
     }
   }

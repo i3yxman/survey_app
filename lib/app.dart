@@ -39,6 +39,7 @@ class MyApp extends StatelessWidget {
         navigatorObservers: [routeObserver],
 
         home: const SplashPage(),
+
         routes: {
           '/login': (_) => const LoginPage(),
           '/home': (_) => const HomePage(),
