@@ -286,7 +286,15 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> with RouteAware {
       children: [
         if (storeLine != null)
           InfoChip(icon: Icons.storefront_outlined, text: storeLine),
-        InfoChip(icon: Icons.schedule_outlined, text: '创建时间：${a.createdAt}'),
+        InfoChip(
+          icon: Icons.schedule_outlined,
+          text: '创建时间：${a.createdAtText}',
+        ),
+        if (a.plannedVisitDateText != null)
+          InfoChip(
+            icon: Icons.event_outlined,
+            text: '计划访问：${a.plannedVisitDateText}',
+          ),
         if (distanceText != null)
           InfoChip(icon: Icons.place_outlined, text: '距离门店 $distanceText'),
         if (a.storeLatitude != null && a.storeLongitude != null)

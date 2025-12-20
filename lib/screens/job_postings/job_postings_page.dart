@@ -13,6 +13,7 @@ import '../../services/api_service.dart';
 import '../../widgets/info_chip.dart';
 import '../../utils/location_utils.dart';
 import '../../utils/snackbar.dart';
+import '../../utils/date_format.dart';
 import '../../main.dart';
 
 class JobPostingsPage extends StatefulWidget {
@@ -93,11 +94,22 @@ class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
   Future<void> _handleApply(JobPosting p) async {
     final provider = context.read<JobPostingsProvider>();
 
+    // 1) 选择日期
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime.now().subtract(const Duration(days: 30)),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+
+    if (picked == null) return;
+
+    // 2) 提交申请（带 planned_visit_date）
     try {
-      await provider.apply(p.id);
+      await provider.apply(p.id, plannedVisitDate: picked);
 
       if (!mounted) return;
-      showSuccessSnackBar(context, '申请已提交，请等待审核');
+      showSuccessSnackBar(context, '申请已提交：${formatDate(picked)}');
       await _refresh();
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -342,7 +354,7 @@ class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
                                   ),
                                 InfoChip(
                                   icon: Icons.schedule_outlined,
-                                  text: '发布时间：${p.createdAt}',
+                                  text: '发布时间：${formatDateTime(p.createdAt)}',
                                 ),
                                 if (distanceText != null)
                                   InfoChip(

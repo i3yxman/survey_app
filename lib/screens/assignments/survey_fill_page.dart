@@ -16,7 +16,6 @@ import '../../utils/error_message.dart';
 import '../../utils/snackbar.dart';
 import 'submission_comments_page.dart';
 
-/// 自定义中文文案，让底部按钮和提示都显示中文
 class _ChinesePickerTextDelegate extends AssetPickerTextDelegate {
   const _ChinesePickerTextDelegate();
 
@@ -25,69 +24,50 @@ class _ChinesePickerTextDelegate extends AssetPickerTextDelegate {
 
   @override
   String get confirm => '确认';
-
   @override
   String get cancel => '取消';
-
   @override
   String get preview => '预览';
-
   @override
   String get select => '选择';
-
   @override
   String get emptyList => '暂无内容';
-
   @override
   String get original => '原图';
-
   @override
   String get unableToAccessAll => '无法访问所有照片';
-
   @override
   String get viewingLimitedAssetsTip => '应用当前只能访问部分照片，如需完整访问，请前往系统设置修改权限。';
-
   @override
   String get changeAccessibleLimitedAssets => '管理可访问的照片';
-
   @override
   String get accessAllTip => '允许访问“所有照片”以完整选择图片和视频。';
-
   @override
   String get goToSystemSettings => '前往系统设置';
-
   @override
   String get accessLimitedAssets => '保持有限访问';
-
   @override
   String get accessiblePathName => '可访问的资源';
-
   @override
   String get sTypeImageLabel => '图片';
-
   @override
   String get sTypeVideoLabel => '视频';
-
   @override
   String get sTypeAudioLabel => '音频';
-
   @override
   String get sTypeOtherLabel => '其他';
-
   @override
   String get loadFailed => '加载失败';
-
   @override
   String get edit => '编辑';
-
   @override
   String get gifIndicator => 'GIF';
 }
 
 class _PendingUpload {
-  final String path; // 本地文件路径
-  final String mediaType; // 'image' / 'video'
-  double progress; // 0.0 ~ 1.0
+  final String path;
+  final String mediaType;
+  double progress;
 
   _PendingUpload({
     required this.path,
@@ -112,43 +92,31 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
   bool _loading = true;
   String? _error;
 
-  // 每题一个草稿 AnswerDraft
   final Map<int, AnswerDraft> _answers = {};
-
-  // 媒体缓存：mediaFileId -> MediaFileDto（包含 fileUrl、mediaType）
   final Map<int, MediaFileDto> _mediaCache = {};
-
-  // 当前正在加载信息的媒体 ID（避免重复重复请求）
   final Set<int> _loadingMediaIds = {};
-
-  // 某个题目正在上传的本地文件列表（用于画缩略图上的圈圈）
   final Map<int, List<_PendingUpload>> _pendingUploads = {};
-
-  // 视频缩略图缓存：mediaFileId -> 缩略图二进制数据
   final Map<int, Uint8List> _videoThumbCache = {};
 
-  // 是否已经做过初始化（拿到路由参数）
+  final Map<int, TextEditingController> _textControllers = {};
+  final Map<int, TextEditingController> _numberControllers = {};
+
   bool _inited = false;
 
-  // 当前这份问卷在后端的 Submission 记录
   int? _submissionId;
-  String?
-  _submissionStatus; // 'draft' / 'submitted' / 'needs_revision' / 'resubmitted' / ...
+  String? _submissionStatus;
 
   bool _savingDraft = false;
   bool _submitting = false;
 
-  // 用于告诉上一个页面“我这边有更新，需要刷新列表”
   bool _shouldRefreshOnPop = false;
 
-  // 已提交 / 已重新提交 / 已通过 / 已作废 的问卷只允许查看
   bool get _isReadOnly =>
       _submissionStatus == 'submitted' ||
       _submissionStatus == 'resubmitted' ||
       _submissionStatus == 'approved' ||
       _submissionStatus == 'cancelled';
 
-  // 是否存在正在上传媒体的题目
   bool get _hasUploadingMedia => _answers.values.any((d) => d.isUploadingMedia);
 
   @override
@@ -158,11 +126,20 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     _inited = true;
 
     _assignment = ModalRoute.of(context)!.settings.arguments as Assignment;
-
     _loadQuestionnaireAndSubmission();
   }
 
-  /// 找出所有指向某题的逻辑（谁的 outgoing_logics 里 goto_question == q.id）
+  @override
+  void dispose() {
+    for (final c in _textControllers.values) {
+      c.dispose();
+    }
+    for (final c in _numberControllers.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
   List<QuestionLogicDto> _getIncomingLogics(QuestionDto q) {
     final questionnaire = _questionnaire;
     if (questionnaire == null) return const [];
@@ -178,9 +155,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     return result;
   }
 
-  /// 判断一题是否“应该显示”
-  /// - 没有逻辑：默认显示
-  /// - 有逻辑：只要有一条逻辑的触发条件被满足，就显示；否则隐藏
   bool _isQuestionVisible(QuestionDto q) {
     final incoming = _getIncomingLogics(q);
     if (incoming.isEmpty) return true;
@@ -196,7 +170,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     return false;
   }
 
-  /// 题目是否已经作答（用于提交时的必填校验）
   bool _hasAnswer(QuestionDto q, AnswerDraft draft) {
     switch (q.type) {
       case 'single':
@@ -215,7 +188,41 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     }
   }
 
-  /// 一次性加载：问卷详情 + 已有提交（回填）
+  void _ensureControllersForQuestion(QuestionDto q, AnswerDraft draft) {
+    if (q.type == 'text') {
+      _textControllers.putIfAbsent(q.id, () {
+        final c = TextEditingController(text: draft.textValue ?? '');
+        c.addListener(() {
+          draft.textValue = c.text;
+        });
+        return c;
+      });
+      final c = _textControllers[q.id]!;
+      final desired = draft.textValue ?? '';
+      if (c.text != desired) {
+        c.text = desired;
+      }
+    }
+
+    if (q.type == 'number') {
+      _numberControllers.putIfAbsent(q.id, () {
+        final c = TextEditingController(
+          text: draft.numberValue?.toString() ?? '',
+        );
+        c.addListener(() {
+          final v = c.text.trim();
+          draft.numberValue = v.isEmpty ? null : double.tryParse(v);
+        });
+        return c;
+      });
+      final c = _numberControllers[q.id]!;
+      final desired = draft.numberValue?.toString() ?? '';
+      if (c.text != desired) {
+        c.text = desired;
+      }
+    }
+  }
+
   Future<void> _loadQuestionnaireAndSubmission() async {
     final qId = _assignment.questionnaire;
     if (qId == null) {
@@ -232,7 +239,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     });
 
     try {
-      // 并行请求：问卷 + 该任务所有提交记录
       final results = await Future.wait([
         _qRepo.fetchDetail(qId),
         _subRepo.getSubmissions(_assignment.id),
@@ -241,13 +247,11 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
       final q = results[0] as QuestionnaireDto;
       final submissions = results[1] as List<SubmissionDto>;
 
-      // 先为每个题目准备一个空草稿
       final draftMap = <int, AnswerDraft>{};
       for (final qu in q.questions) {
         draftMap[qu.id] = AnswerDraft(questionId: qu.id);
       }
 
-      // 找出最新一条提交（按 version 优先，其次 id）
       SubmissionDto? latest;
       if (submissions.isNotEmpty) {
         submissions.sort((a, b) {
@@ -258,7 +262,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
         });
         latest = submissions.last;
 
-        // 回填答案到 draftMap 里
         for (final ans in latest.answers) {
           final d = draftMap[ans.questionId];
           if (d == null) continue;
@@ -286,14 +289,11 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     }
   }
 
-  /// 保存草稿：不校验必填，任何情况都允许
   Future<void> _saveDraft() async {
     final q = _questionnaire;
     if (q == null) return;
 
-    // 0. 如果还有图片/视频正在上传，禁止保存草稿
-    final hasUploading = _answers.values.any((d) => d.isUploadingMedia);
-    if (hasUploading) {
+    if (_answers.values.any((d) => d.isUploadingMedia)) {
       showErrorSnackBar(context, '有图片或视频正在上传，请稍候上传完成后再保存草稿');
       return;
     }
@@ -314,7 +314,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
       setState(() {
         _submissionId = dto.id;
         _submissionStatus = dto.status;
-        _shouldRefreshOnPop = true; // 草稿保存成功后，需要刷新列表
+        _shouldRefreshOnPop = true;
       });
 
       showSuccessSnackBar(context, '草稿已保存');
@@ -330,21 +330,16 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     }
   }
 
-  /// 提交问卷：只对“可见 + 必填”的题做校验
   Future<void> _submit() async {
     final q = _questionnaire;
     if (q == null) return;
 
-    // 0. 如果还有图片/视频正在上传，禁止提交
-    final hasUploading = _answers.values.any((d) => d.isUploadingMedia);
-    if (hasUploading) {
+    if (_answers.values.any((d) => d.isUploadingMedia)) {
       showErrorSnackBar(context, '有图片或视频正在上传，请稍候上传完成后再提交');
       return;
     }
 
-    // 1. 校验必填
     final visibleQuestions = q.questions.where(_isQuestionVisible).toList();
-
     for (final qu in visibleQuestions) {
       if (!qu.required) continue;
       final draft = _answers[qu.id]!;
@@ -354,13 +349,11 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
       }
     }
 
-    // 2. 提交
     setState(() {
       _submitting = true;
     });
 
     try {
-      // ① 如果还没有 submission，先创建一条 draft（POST /submissions/）
       if (_submissionId == null) {
         final created = await _subRepo.saveSubmission(
           submissionId: null,
@@ -369,26 +362,26 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
           includeUnanswered: false,
         );
         _submissionId = created.id;
+        _submissionStatus = created.status;
       } else {
-        // ② 已有 submission：先把最新答案保存进去（PUT /submissions/{id}/）
-        await _subRepo.saveSubmission(
+        final saved = await _subRepo.saveSubmission(
           submissionId: _submissionId,
           assignmentId: _assignment.id,
           answers: _answers,
           includeUnanswered: false,
         );
+        _submissionStatus = saved.status;
       }
 
-      // ③ 真正提交：POST /submissions/{id}/submit/
-      final resp = await _subRepo.submitSubmission(_submissionId!);
-      final newStatus = (resp['new_status'] as String?) ?? '';
+      final dto = await _subRepo.submitSubmission(_submissionId!);
 
       if (!mounted) return;
       setState(() {
-        _submissionStatus = newStatus; // ✅ 这句决定你是否只读
+        _submissionStatus = dto.status;
         _shouldRefreshOnPop = true;
       });
 
+      if (!mounted) return;
       showSuccessSnackBar(context, '问卷已提交');
     } catch (e) {
       if (!mounted) return;
@@ -402,14 +395,13 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     }
   }
 
-  /// 使用相机拍摄一张照片或一段视频
   Future<AssetEntity?> _captureMediaByType(String mediaType) async {
     final bool isImage = mediaType == 'image';
 
     final config = CameraPickerConfig(
-      enableRecording: !isImage, // 图片题：不启用录像；视频题：启用录像
-      onlyEnableRecording: !isImage, // 视频题：只录制视频，不拍照
-      enableAudio: !isImage, // 视频需要声音
+      enableRecording: !isImage,
+      onlyEnableRecording: !isImage,
+      enableAudio: !isImage,
     );
 
     final AssetEntity? entity = await CameraPicker.pickFromCamera(
@@ -420,12 +412,9 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     return entity;
   }
 
-  /// 使用 wechat_assets_picker 选择图片或视频（支持多选）
-  /// 根据 mediaType 只显示图片或视频，并统一中文文案
   Future<List<AssetEntity>?> _pickAssetsByType(String mediaType) {
     final bool pickImage = mediaType == 'image';
 
-    // 只保留一种资源类型的筛选规则
     final filterOptions = FilterOptionGroup()
       ..setOption(
         pickImage ? AssetType.image : AssetType.video,
@@ -447,7 +436,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     );
   }
 
-  /// 把从 wechat_assets_picker 选到的 AssetEntity 顺序上传（一个完成再下一个）
   Future<void> _uploadPickedAssets(
     QuestionDto q,
     AnswerDraft draft,
@@ -456,7 +444,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
   ) async {
     if (assets.isEmpty) return;
 
-    // 1. 选择完之后，弹出“是否上传”对话框，有一个上传按钮
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) {
@@ -479,7 +466,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
 
     if (confirmed != true) return;
 
-    // 2. 标记该题目处于“正在上传”状态
     setState(() {
       draft.isUploadingMedia = true;
       _pendingUploads.putIfAbsent(q.id, () => []);
@@ -491,16 +477,13 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     try {
       for (final asset in assets) {
         final file = await asset.file;
-        if (file == null) {
-          continue;
-        }
+        if (file == null) continue;
 
         final pending = _PendingUpload(
           path: file.path,
           mediaType: mediaType,
           progress: 0.0,
         );
-
         setState(() {
           _pendingUploads[q.id]!.add(pending);
         });
@@ -516,7 +499,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
           onProgress: (sent, totalBytes) {
             if (!mounted || totalBytes == 0) return;
             final p = sent / totalBytes;
-
             setState(() {
               pending.progress = p.clamp(0.0, 1.0);
             });
@@ -535,7 +517,9 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
         _pendingUploads.remove(q.id);
         for (final dto in uploadedDtos) {
           _mediaCache[dto.id] = dto;
-          draft.mediaFileIds.add(dto.id);
+          if (!draft.mediaFileIds.contains(dto.id)) {
+            draft.mediaFileIds.add(dto.id);
+          }
         }
       });
 
@@ -558,7 +542,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     }
   }
 
-  /// 选择并上传媒体
   Future<void> _pickAndUploadMedia(
     QuestionDto q,
     AnswerDraft draft,
@@ -607,22 +590,16 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
 
     if (choice == 'camera') {
       final entity = await _captureMediaByType(mediaType);
-      if (entity != null) {
-        assets = [entity];
-      }
+      if (entity != null) assets = [entity];
     } else if (choice == 'gallery') {
       final picked = await _pickAssetsByType(mediaType);
-      if (picked != null && picked.isNotEmpty) {
-        assets = picked;
-      }
+      if (picked != null && picked.isNotEmpty) assets = picked;
     }
 
     if (assets.isEmpty) return;
-
     await _uploadPickedAssets(q, draft, mediaType, assets);
   }
 
-  /// 根据若干媒体 ID，确保它们已经加载到 _mediaCache 里
   Future<void> _ensureMediaLoaded(List<int> ids) async {
     final needLoad = ids
         .where(
@@ -630,7 +607,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
               !_mediaCache.containsKey(id) && !_loadingMediaIds.contains(id),
         )
         .toList();
-
     if (needLoad.isEmpty) return;
 
     _loadingMediaIds.addAll(needLoad);
@@ -651,7 +627,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     }
   }
 
-  /// 生成 / 获取某个视频的缩略图（带内存缓存）
   Future<Uint8List?> _loadVideoThumbnail(int mediaId, String videoUrl) async {
     if (_videoThumbCache.containsKey(mediaId)) {
       return _videoThumbCache[mediaId]!;
@@ -668,14 +643,12 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
       if (bytes != null) {
         _videoThumbCache[mediaId] = bytes;
       }
-
       return bytes;
     } catch (_) {
       return null;
     }
   }
 
-  // 删除某个媒体文件（仅前端解绑）
   void _removeMedia(QuestionDto q, AnswerDraft draft, int mediaId) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -697,9 +670,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
       },
     );
 
-    // ⭐ async gap 之后，先检查 mounted，防止页面已经销毁
     if (!mounted) return;
-
     if (confirmed != true) return;
 
     setState(() {
@@ -711,7 +682,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     showSuccessSnackBar(context, '已删除');
   }
 
-  /// 构建某题目的媒体缩略图区域（图片 / 视频共用）
   Widget _buildMediaThumbnails(
     QuestionDto q,
     AnswerDraft draft,
@@ -725,7 +695,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     }
 
     if (ids.isNotEmpty) {
-      // ✅ 不要在 build 过程中直接发请求；挪到下一帧，避免 build-loop / setState during build
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         _ensureMediaLoaded(ids);
@@ -743,7 +712,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
         spacing: 8,
         runSpacing: 8,
         children: [
-          // 已上传
           for (var i = 0; i < mediaList.length; i++)
             GestureDetector(
               onTap: () {
@@ -823,8 +791,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                 ],
               ),
             ),
-
-          // 正在上传
           for (final pending in pendingList)
             Stack(
               children: [
@@ -911,9 +877,10 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     );
   }
 
-  /// 构建不同题型的输入控件
   Widget _buildQuestionBody(QuestionDto q, AnswerDraft draft) {
     final readOnly = _isReadOnly;
+    _ensureControllersForQuestion(q, draft);
+
     switch (q.type) {
       case 'single':
         return Column(
@@ -960,33 +927,23 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
         );
       case 'text':
         return TextFormField(
-          initialValue: draft.textValue ?? '',
+          controller: _textControllers[q.id],
           maxLines: null,
           readOnly: readOnly,
           decoration: const InputDecoration(
             border: OutlineInputBorder(),
             hintText: '请输入内容',
           ),
-          onChanged: readOnly
-              ? null
-              : (v) {
-                  draft.textValue = v;
-                },
         );
       case 'number':
         return TextFormField(
-          initialValue: draft.numberValue?.toString() ?? '',
+          controller: _numberControllers[q.id],
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           readOnly: readOnly,
           decoration: const InputDecoration(
             border: OutlineInputBorder(),
             hintText: '请输入数字',
           ),
-          onChanged: readOnly
-              ? null
-              : (v) {
-                  draft.numberValue = double.tryParse(v);
-                },
         );
       case 'image':
         return Column(
@@ -1132,24 +1089,23 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     final progressValue = total == 0 ? 0.0 : answeredCount / total;
 
     final subtitleParts = <String>[];
-    if ((_assignment.clientName ?? '').isNotEmpty) {
+    if ((_assignment.clientName ?? '').isNotEmpty)
       subtitleParts.add(_assignment.clientName!);
-    }
-    if ((_assignment.projectName ?? '').isNotEmpty) {
+    if ((_assignment.projectName ?? '').isNotEmpty)
       subtitleParts.add(_assignment.projectName!);
-    }
-    if ((_assignment.storeName ?? '').isNotEmpty) {
+    if ((_assignment.storeName ?? '').isNotEmpty)
       subtitleParts.add(_assignment.storeName!);
-    }
     final subtitleText = subtitleParts.join(' · ');
 
-    return WillPopScope(
-      onWillPop: () async {
+    return PopScope(
+      canPop: !_shouldRefreshOnPop,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
         if (_shouldRefreshOnPop) {
           Navigator.of(context).pop(true);
-          return false;
+        } else {
+          Navigator.of(context).pop();
         }
-        return true;
       },
       child: Scaffold(
         appBar: AppBar(
@@ -1238,8 +1194,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                   ),
                 ),
                 const SizedBox(height: 12),
-
-                // 非只读状态：显示按钮
                 if (!_isReadOnly) ...[
                   Row(
                     children: [
@@ -1283,8 +1237,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                   ),
                   const SizedBox(height: 8),
                 ],
-
-                // 总是显示状态文案
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
@@ -1314,8 +1266,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                     ),
                   ),
                 ),
-
-                // 有 submissionId 就显示“查看审核沟通”
                 if (_submissionId != null) ...[
                   const SizedBox(height: 8),
                   Align(
@@ -1346,7 +1296,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
   }
 }
 
-/// 全屏图片浏览页面，可左右滑动
 class ImageGalleryPage extends StatefulWidget {
   final List<MediaFileDto> images;
   final int initialIndex;
@@ -1388,11 +1337,7 @@ class _ImageGalleryPageState extends State<ImageGalleryPage> {
       ),
       body: PageView.builder(
         controller: _pageController,
-        onPageChanged: (index) {
-          setState(() {
-            _currentIndex = index;
-          });
-        },
+        onPageChanged: (index) => setState(() => _currentIndex = index),
         itemCount: widget.images.length,
         itemBuilder: (context, index) {
           final media = widget.images[index];
@@ -1415,7 +1360,6 @@ class _ImageGalleryPageState extends State<ImageGalleryPage> {
   }
 }
 
-/// 全屏视频浏览页面，可左右滑动
 class VideoGalleryPage extends StatefulWidget {
   final List<MediaFileDto> videos;
   final int initialIndex;
@@ -1457,11 +1401,7 @@ class _VideoGalleryPageState extends State<VideoGalleryPage> {
       ),
       body: PageView.builder(
         controller: _pageController,
-        onPageChanged: (index) {
-          setState(() {
-            _currentIndex = index;
-          });
-        },
+        onPageChanged: (index) => setState(() => _currentIndex = index),
         itemCount: widget.videos.length,
         itemBuilder: (context, index) {
           final media = widget.videos[index];
@@ -1472,7 +1412,6 @@ class _VideoGalleryPageState extends State<VideoGalleryPage> {
   }
 }
 
-/// 单个视频播放器，用于 VideoGalleryPage 的每一页
 class _InlineVideoPlayer extends StatefulWidget {
   final String videoUrl;
 
@@ -1492,9 +1431,7 @@ class _InlineVideoPlayerState extends State<_InlineVideoPlayer> {
     _controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl))
       ..initialize().then((_) {
         if (!mounted) return;
-        setState(() {
-          _initialized = true;
-        });
+        setState(() => _initialized = true);
       });
   }
 
@@ -1526,7 +1463,6 @@ class _InlineVideoPlayerState extends State<_InlineVideoPlayer> {
   }
 }
 
-/// 单独的视频播放页面（如果以后需要单页播放）
 class VideoPlayerPage extends StatefulWidget {
   final String videoUrl;
 
@@ -1546,9 +1482,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     _controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl))
       ..initialize().then((_) {
         if (!mounted) return;
-        setState(() {
-          _initialized = true;
-        });
+        setState(() => _initialized = true);
       });
   }
 

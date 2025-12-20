@@ -36,7 +36,26 @@ class LoginResult {
 class Assignment {
   final int id;
   final String status;
-  final String createdAt;
+  final DateTime createdAt;
+
+  String get createdAtText =>
+      "${createdAt.year}-${createdAt.month.toString().padLeft(2, '0')}-${createdAt.day.toString().padLeft(2, '0')}";
+
+  String? get projectDateRange {
+    if (projectStartDate == null || projectEndDate == null) return null;
+    return "${projectStartDate!.year}-${projectStartDate!.month.toString().padLeft(2, '0')}-${projectStartDate!.day.toString().padLeft(2, '0')}"
+        " ~ "
+        "${projectEndDate!.year}-${projectEndDate!.month.toString().padLeft(2, '0')}-${projectEndDate!.day.toString().padLeft(2, '0')}";
+  }
+
+  String? get plannedVisitDateText {
+    if (plannedVisitDate == null) return null;
+    return "${plannedVisitDate!.year}-${plannedVisitDate!.month.toString().padLeft(2, '0')}-${plannedVisitDate!.day.toString().padLeft(2, '0')}";
+  }
+
+  final DateTime? projectStartDate;
+  final DateTime? projectEndDate;
+  final DateTime? plannedVisitDate;
 
   final int? jobPosting;
 
@@ -62,9 +81,13 @@ class Assignment {
     required this.id,
     required this.status,
     required this.createdAt,
+
+    this.projectStartDate,
+    this.projectEndDate,
+    this.plannedVisitDate,
+
     this.jobPosting,
 
-    /// 新写法：同时兼容 project / projectId 两个名字
     int? project,
     int? projectId,
     this.projectName,
@@ -95,13 +118,22 @@ class Assignment {
     return Assignment(
       id: json['id'] as int,
       status: json['status'] as String,
-      createdAt: json['created_at']?.toString() ?? '',
+      createdAt: DateTime.parse(json['created_at']),
 
       jobPosting: json['job_posting'] as int?,
 
       // 这里仍然用后端原始字段名 project / questionnaire
       project: json['project'] as int?,
       projectName: json['project_name']?.toString(),
+      projectStartDate: json['project_start_date'] != null
+          ? DateTime.parse(json['project_start_date'])
+          : null,
+      projectEndDate: json['project_end_date'] != null
+          ? DateTime.parse(json['project_end_date'])
+          : null,
+      plannedVisitDate: json['planned_visit_date'] != null
+          ? DateTime.parse(json['planned_visit_date'])
+          : null,
       questionnaire: json['questionnaire'] as int?,
       questionnaireTitle: json['questionnaire_title']?.toString(),
       clientName: json['client_name']?.toString(),
@@ -121,7 +153,18 @@ class Assignment {
     return {
       'id': id,
       'status': status,
-      'created_at': createdAt,
+      'created_at': createdAt.toIso8601String(),
+
+      'project_start_date': projectStartDate?.toIso8601String().substring(
+        0,
+        10,
+      ),
+      'project_end_date': projectEndDate?.toIso8601String().substring(0, 10),
+      'planned_visit_date': plannedVisitDate?.toIso8601String().substring(
+        0,
+        10,
+      ),
+
       'job_posting': jobPosting,
       'project': project,
       'project_name': projectName,
@@ -170,7 +213,8 @@ class JobPosting {
   final double? storeLatitude;
   final double? storeLongitude;
 
-  final String createdAt;
+  final DateTime createdAt;
+  final DateTime publishedAt;
 
   JobPosting({
     required this.id,
@@ -185,6 +229,7 @@ class JobPosting {
     required this.questionnaireId,
     required this.questionnaireTitle,
     required this.createdAt,
+    required this.publishedAt,
     this.storeId,
     this.storeCode,
     this.storeName,
@@ -199,7 +244,8 @@ class JobPosting {
       id: json['id'] as int,
       title: json['title'] as String? ?? '',
       description: json['description'] as String? ?? '',
-      status: json['status'] as String? ?? '',
+      status:
+          (json['status'] as String?) ?? (json['new_status'] as String?) ?? '',
       applicationStatus: json['application_status'] as String?, // ⭐ 新字段
       clientId: json['client'] as int,
       clientName: json['client_name'] as String? ?? '',
@@ -214,7 +260,15 @@ class JobPosting {
       storeCity: json['store_city'] as String?,
       storeLatitude: (json['store_latitude'] as num?)?.toDouble(),
       storeLongitude: (json['store_longitude'] as num?)?.toDouble(),
-      createdAt: json['created_at'] as String? ?? '',
+      createdAt: DateTime.parse(
+        (json['created_at'] as String?) ?? DateTime.now().toIso8601String(),
+      ),
+      publishedAt: DateTime.parse(
+        (json['published_at'] as String?) ??
+            (json['start_at'] as String?) ??
+            (json['created_at'] as String?) ??
+            DateTime.now().toIso8601String(),
+      ),
     );
   }
 
@@ -238,7 +292,8 @@ class JobPosting {
     String? storeCity,
     double? storeLatitude,
     double? storeLongitude,
-    String? createdAt,
+    DateTime? createdAt,
+    DateTime? publishedAt,
   }) {
     return JobPosting(
       id: id ?? this.id,
@@ -260,6 +315,7 @@ class JobPosting {
       storeLatitude: storeLatitude ?? this.storeLatitude,
       storeLongitude: storeLongitude ?? this.storeLongitude,
       createdAt: createdAt ?? this.createdAt,
+      publishedAt: publishedAt ?? this.publishedAt,
     );
   }
 }
@@ -438,7 +494,8 @@ class SubmissionDto {
     return SubmissionDto(
       id: json['id'] as int,
       assignmentId: json['assignment'] as int,
-      status: json['status'] as String? ?? '',
+      status:
+          (json['status'] as String?) ?? (json['new_status'] as String?) ?? '',
       version: json['version'] as int?,
       submittedAt: json['submitted_at'] as String?,
       answers: answers,

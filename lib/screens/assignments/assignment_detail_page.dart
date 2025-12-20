@@ -132,8 +132,19 @@ class AssignmentDetailPage extends StatelessWidget {
                                   ),
                                 InfoChip(
                                   icon: Icons.schedule_outlined,
-                                  text: '创建时间：${a.createdAt}',
+                                  text: '创建时间：${a.createdAtText}',
                                 ),
+                                if (a.projectDateRange != null)
+                                  InfoChip(
+                                    icon: Icons.date_range_outlined,
+                                    text: '项目周期：${a.projectDateRange}',
+                                  ),
+
+                                if (a.plannedVisitDateText != null)
+                                  InfoChip(
+                                    icon: Icons.event_outlined,
+                                    text: '计划访问：${a.plannedVisitDateText}',
+                                  ),
                                 if (a.storeLatitude != null &&
                                     a.storeLongitude != null)
                                   InfoChip(

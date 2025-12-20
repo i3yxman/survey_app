@@ -15,8 +15,11 @@ class JobPostingRepository {
   }
 
   /// 申请任务
-  Future<void> apply(int postingId) async {
-    await _api.applyJobPosting(postingId);
+  Future<void> apply(
+    int postingId, {
+    required DateTime plannedVisitDate,
+  }) async {
+    await _api.applyJobPosting(postingId, plannedVisitDate: plannedVisitDate);
   }
 
   /// 撤销申请

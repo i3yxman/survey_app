@@ -47,9 +47,12 @@ class JobPostingsProvider extends ChangeNotifier {
   }
 
   /// 申请任务
-  Future<void> apply(int postingId) async {
+  Future<void> apply(
+    int postingId, {
+    required DateTime plannedVisitDate,
+  }) async {
     try {
-      await _repo.apply(postingId);
+      await _repo.apply(postingId, plannedVisitDate: plannedVisitDate);
       // 成功后重新拉一遍列表，保持 UI 最新
       await loadJobPostings();
     } catch (e) {

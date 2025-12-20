@@ -271,10 +271,20 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>> applyJobPosting(int postingId) async {
+  Future<Map<String, dynamic>> applyJobPosting(
+    int postingId, {
+    required DateTime plannedVisitDate,
+  }) async {
     try {
       final resp = await _dio.post(
         '/api/assignments/job-postings/$postingId/apply/',
+        data: {
+          'planned_visit_date': plannedVisitDate.toIso8601String().substring(
+            0,
+            10,
+          ),
+        },
+        options: Options(contentType: Headers.jsonContentType),
       );
       final data = _normalizeData(resp.data);
       if (data == null) return {};
@@ -526,14 +536,25 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>> submitSubmission(int submissionId) async {
+  Future<SubmissionDto> submitSubmission(int submissionId) async {
     try {
       final resp = await _dio.post(
         '/api/assignments/submissions/$submissionId/submit/',
       );
       final data = _normalizeData(resp.data);
-      if (data is Map<String, dynamic>) return data;
-      return {};
+
+      if (data is Map<String, dynamic>) {
+        if (data['submission'] is Map<String, dynamic>) {
+          return SubmissionDto.fromJson(
+            data['submission'] as Map<String, dynamic>,
+          );
+        }
+        if (data.containsKey('id') && data.containsKey('assignment')) {
+          return SubmissionDto.fromJson(data);
+        }
+      }
+
+      throw ApiException(userMessage: '提交成功但未返回提交记录，请刷新后查看状态');
     } on DioException catch (e) {
       _throwDioError(e, fallback: "提交失败");
     } catch (e) {
