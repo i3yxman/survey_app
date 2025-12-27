@@ -1,20 +1,19 @@
 // lib/screens/job_postings/job_postings_page.dart
 
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/api_models.dart';
 import '../../providers/job_postings_provider.dart';
 import '../../providers/location_provider.dart'; // ⭐ 新增
 import '../../services/api_service.dart';
 import '../../widgets/info_chip.dart';
+import '../../widgets/avoid_dates_chip.dart';
 import '../../utils/location_utils.dart';
 import '../../utils/snackbar.dart';
 import '../../utils/date_format.dart';
 import '../../main.dart';
+import '../../utils/map_selector.dart';
 
 class JobPostingsPage extends StatefulWidget {
   const JobPostingsPage({super.key});
@@ -69,54 +68,77 @@ class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
     return formatStoreDistance(loc.position, storeLat, storeLng);
   }
 
-  Future<void> _launchNavigation({
-    required double lat,
-    required double lng,
-    String? label,
-  }) async {
-    final encodedLabel = Uri.encodeComponent(label ?? '目的地');
-    Uri uri;
-
-    if (Platform.isIOS) {
-      uri = Uri.parse('http://maps.apple.com/?daddr=$lat,$lng&q=$encodedLabel');
-    } else {
-      uri = Uri.parse(
-        'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng',
-      );
-    }
-
-    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-      if (!mounted) return;
-      showErrorSnackBar(context, '无法打开地图应用');
-    }
-  }
-
   Future<void> _handleApply(JobPosting p) async {
     final provider = context.read<JobPostingsProvider>();
 
-    // 1) 选择日期
+    final now = DateTime.now();
+    final todayDate = DateTime(now.year, now.month, now.day);
+
+    // ✅ 项目周期必须存在（后端会兜底，这里前端也兜底）
+    if (p.projectStartDate == null || p.projectEndDate == null) {
+      if (!mounted) return;
+      showErrorSnackBar(context, '该任务所属项目未设置开始/结束日期，暂不可申请');
+      return;
+    }
+
+    final projectStart = DateTime.parse(p.projectStartDate!);
+    final projectEnd = DateTime.parse(p.projectEndDate!);
+    final projectStartDate = DateTime(
+      projectStart.year,
+      projectStart.month,
+      projectStart.day,
+    );
+    final projectEndDate = DateTime(
+      projectEnd.year,
+      projectEnd.month,
+      projectEnd.day,
+    );
+
+    // ✅ 可选起始日：max(today, projectStart)
+    final first = todayDate.isAfter(projectStartDate)
+        ? todayDate
+        : projectStartDate;
+    final last = projectEndDate;
+
+    if (first.isAfter(last)) {
+      if (!mounted) return;
+      showErrorSnackBar(context, '项目周期已结束，无法申请');
+      return;
+    }
+
+    final avoidDates = p.avoidVisitDates
+        .map((e) => DateTime.parse(e))
+        .map((d) => DateTime(d.year, d.month, d.day))
+        .toSet();
+
     final picked = await showDatePicker(
       context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime.now().subtract(const Duration(days: 30)),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
+      initialDate: first,
+      firstDate: first,
+      lastDate: last,
+      locale: const Locale('zh', 'CN'),
+      selectableDayPredicate: (day) {
+        final d = DateTime(day.year, day.month, day.day);
+        return !avoidDates.contains(d);
+      },
     );
 
     if (picked == null) return;
 
-    // 2) 提交申请（带 planned_visit_date）
+    if (picked.isBefore(todayDate)) {
+      if (!mounted) return;
+      showErrorSnackBar(context, '无法选择过去的日期');
+      return;
+    }
+
     try {
       await provider.apply(p.id, plannedVisitDate: picked);
-
       if (!mounted) return;
-      showSuccessSnackBar(context, '申请已提交：${formatDate(picked)}');
+      showSuccessSnackBar(context, '申请已提交，计划走访日期：${formatDateZh(picked)}');
       await _refresh();
     } on ApiException catch (e) {
       if (!mounted) return;
       showErrorSnackBar(context, e, fallback: '申请失败，请稍后重试');
-    } catch (e) {
-      if (!mounted) return;
-      showErrorSnackBar(context, e, fallback: '申请失败，请稍后再试');
     }
   }
 
@@ -184,6 +206,7 @@ class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
         width: trailingWidth,
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Text(
               '已申请',
@@ -192,6 +215,16 @@ class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
                 fontWeight: FontWeight.w500,
               ),
             ),
+            if (p.plannedVisitDate != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(
+                  '计划走访日期：\n${formatDateZh(DateTime.parse(p.plannedVisitDate!))}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.secondary,
+                  ),
+                ),
+              ),
             const SizedBox(height: 6),
             OutlinedButton(
               onPressed: loading ? null : () => _handleCancelApply(p),
@@ -347,15 +380,25 @@ class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
                               spacing: 8,
                               runSpacing: 4,
                               children: [
+                                if (p.avoidVisitDates.isNotEmpty ||
+                                    p.avoidVisitDateRanges.isNotEmpty)
+                                  AvoidDatesChip(
+                                    rawDates: p.avoidVisitDates,
+                                    ranges: p.avoidVisitDateRanges,
+                                    foldThreshold: 6, // 你要的 N 就改这里（最佳实践：集中控制）
+                                  ),
                                 if (storeLine != null)
                                   InfoChip(
                                     icon: Icons.storefront_outlined,
                                     text: storeLine,
                                   ),
-                                InfoChip(
-                                  icon: Icons.schedule_outlined,
-                                  text: '发布时间：${formatDateTime(p.createdAt)}',
-                                ),
+                                if (p.projectStartDate != null &&
+                                    p.projectEndDate != null)
+                                  InfoChip(
+                                    icon: Icons.date_range_outlined,
+                                    text:
+                                        '项目周期：${p.projectStartDate} 至 ${p.projectEndDate}',
+                                  ),
                                 if (distanceText != null)
                                   InfoChip(
                                     icon: Icons.place_outlined,
@@ -367,7 +410,8 @@ class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
                                     icon: Icons.navigation_outlined,
                                     text: '导航',
                                     onTap: () {
-                                      _launchNavigation(
+                                      openMapSelector(
+                                        context: context,
                                         lat: p.storeLatitude!,
                                         lng: p.storeLongitude!,
                                         label: p.storeName ?? p.clientName,

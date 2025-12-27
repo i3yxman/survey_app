@@ -205,6 +205,12 @@ class JobPosting {
   final int questionnaireId;
   final String questionnaireTitle;
 
+  final String? projectStartDate;
+  final String? projectEndDate;
+  final List<String> avoidVisitDates;
+  final List<Map<String, String>> avoidVisitDateRanges;
+  final String? plannedVisitDate;
+
   final int? storeId;
   final String? storeCode;
   final String? storeName;
@@ -230,6 +236,11 @@ class JobPosting {
     required this.questionnaireTitle,
     required this.createdAt,
     required this.publishedAt,
+    this.plannedVisitDate,
+    this.projectStartDate,
+    this.projectEndDate,
+    this.avoidVisitDates = const [],
+    this.avoidVisitDateRanges = const [],
     this.storeId,
     this.storeCode,
     this.storeName,
@@ -253,6 +264,24 @@ class JobPosting {
       projectName: json['project_name'] as String? ?? '',
       questionnaireId: json['questionnaire'] as int,
       questionnaireTitle: json['questionnaire_title'] as String? ?? '',
+      plannedVisitDate: json['planned_visit_date'] as String?,
+      projectStartDate: json['project_start_date'] as String?,
+      projectEndDate: json['project_end_date'] as String?,
+      avoidVisitDates:
+          (json['avoid_visit_dates'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [],
+      avoidVisitDateRanges:
+          (json['avoid_visit_date_ranges'] as List<dynamic>?)
+              ?.map(
+                (e) => {
+                  'start': (e as Map)['start'].toString(),
+                  'end': (e)['end'].toString(),
+                },
+              )
+              .toList() ??
+          [],
       storeId: json['store_id'] as int?,
       storeCode: json['store_code'] as String?,
       storeName: json['store_name'] as String?,

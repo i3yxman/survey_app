@@ -1089,12 +1089,15 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     final progressValue = total == 0 ? 0.0 : answeredCount / total;
 
     final subtitleParts = <String>[];
-    if ((_assignment.clientName ?? '').isNotEmpty)
+    if ((_assignment.clientName ?? '').isNotEmpty) {
       subtitleParts.add(_assignment.clientName!);
-    if ((_assignment.projectName ?? '').isNotEmpty)
+    }
+    if ((_assignment.projectName ?? '').isNotEmpty) {
       subtitleParts.add(_assignment.projectName!);
-    if ((_assignment.storeName ?? '').isNotEmpty)
+    }
+    if ((_assignment.storeName ?? '').isNotEmpty) {
       subtitleParts.add(_assignment.storeName!);
+    }
     final subtitleText = subtitleParts.join(' · ');
 
     return PopScope(

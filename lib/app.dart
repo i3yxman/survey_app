@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_localizations/flutter_localizations.dart'; // ✅ 新增
 
 import 'theme/app_theme.dart';
 import 'screens/login/login_page.dart';
@@ -36,15 +37,23 @@ class MyApp extends StatelessWidget {
         darkTheme: AppTheme.darkTheme,
         themeMode: ThemeMode.system,
 
-        navigatorObservers: [routeObserver],
+        // ✅ 中文本地化
+        locale: const Locale('zh', 'CN'),
+        supportedLocales: const [Locale('zh', 'CN')],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
 
+        navigatorObservers: [routeObserver],
         home: const SplashPage(),
 
         routes: {
           '/login': (_) => const LoginPage(),
           '/home': (_) => const HomePage(),
-          '/assignment-detail': (context) => const AssignmentDetailPage(),
-          '/survey-fill': (context) => const SurveyFillPage(),
+          '/assignment-detail': (_) => const AssignmentDetailPage(),
+          '/survey-fill': (_) => const SurveyFillPage(),
           '/forgot-password': (_) => const ForgotPasswordPage(),
           '/change-password': (_) => const ChangePasswordPage(),
         },

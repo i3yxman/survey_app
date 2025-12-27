@@ -10,6 +10,11 @@ String formatDate(DateTime? dt) {
   return _ymd.format(dt.toLocal());
 }
 
+String formatDateZh(DateTime? dt) {
+  if (dt == null) return '-';
+  return DateFormat('yyyy年MM月dd日').format(dt.toLocal());
+}
+
 String formatDateTime(DateTime? dt) {
   if (dt == null) return '-';
   return _ymdHm.format(dt.toLocal());
