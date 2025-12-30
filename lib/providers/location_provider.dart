@@ -2,29 +2,23 @@
 
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 
 import '../utils/location_utils.dart';
 
-/// 统一管理当前用户定位的全局 Provider
-///
-/// - 整个 App 只负责拿一次定位，存在这里
-/// - 各个页面（任务大厅 / 我的任务等）只读这个 Provider，不自己去调 Geolocator
 class LocationProvider extends ChangeNotifier {
   Position? _position;
+  String? _city; // ✅ 新增：当前城市（如 “上海市”）
   bool _isLoading = false;
   String? _error;
 
   Position? get position => _position;
+  String? get city => _city;
   bool get isLoading => _isLoading;
   String? get error => _error;
 
-  /// 确保有一次定位：
-  /// - 如果已经有 position 了，就不会重复请求
-  /// - 如果正在请求，就直接返回
   Future<void> ensureLocation() async {
-    if (_position != null || _isLoading) {
-      return;
-    }
+    if (_position != null || _isLoading) return;
 
     _isLoading = true;
     _error = null;
@@ -34,19 +28,43 @@ class LocationProvider extends ChangeNotifier {
 
     if (pos == null) {
       _position = null;
+      _city = null;
       _error = '定位不可用：请开启定位服务并授予权限';
-    } else {
-      _position = pos;
-      _error = null;
+      _isLoading = false;
+      notifyListeners();
+      return;
     }
 
+    _position = pos;
+
+    // ✅ 反地理编码：经纬度 -> 城市
+    try {
+      final places = await placemarkFromCoordinates(
+        pos.latitude,
+        pos.longitude,
+      );
+
+      final p = places.isNotEmpty ? places.first : null;
+
+      // iOS/Android 返回字段不完全一致：locality / subAdministrativeArea / administrativeArea
+      final raw = (p?.locality ?? p?.subAdministrativeArea ?? '').trim();
+      if (raw.isNotEmpty) {
+        _city = raw.endsWith('市') ? raw : '$raw市';
+      } else {
+        _city = null;
+      }
+    } catch (_) {
+      _city = null; // 失败就保持未知，不影响其它功能
+    }
+
+    _error = null;
     _isLoading = false;
     notifyListeners();
   }
 
-  /// 手动刷新定位（比如用户下拉刷新时）
   Future<void> refresh() async {
     _position = null;
+    _city = null;
     await ensureLocation();
   }
 }

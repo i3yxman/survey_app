@@ -2,10 +2,11 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/api_models.dart';
 import '../../providers/job_postings_provider.dart';
-import '../../providers/location_provider.dart'; // ⭐ 新增
+import '../../providers/location_provider.dart';
 import '../../services/api_service.dart';
 import '../../widgets/info_chip.dart';
 import '../../widgets/avoid_dates_chip.dart';
@@ -23,29 +24,36 @@ class JobPostingsPage extends StatefulWidget {
 }
 
 class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
+  static const _kPrefCityMode = 'job_postings_city_mode'; // 'auto' | 'manual'
+  static const _kPrefManualCity = 'job_postings_manual_city';
+
+  String _cityMode = 'auto';
+  String? _manualCity;
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<JobPostingsProvider>().loadJobPostings();
-      context.read<LocationProvider>().ensureLocation(); // ⭐ 全局定位
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _loadCityPref();
+      await context.read<LocationProvider>().ensureLocation();
+      await context.read<JobPostingsProvider>().loadJobPostings();
+      if (mounted) setState(() {});
     });
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-
     final route = ModalRoute.of(context);
-    if (route != null) {
-      routeObserver.subscribe(this, route);
-    }
+    if (route != null) routeObserver.subscribe(this, route);
   }
 
   @override
-  void didPopNext() {
-    context.read<JobPostingsProvider>().loadJobPostings();
-    context.read<LocationProvider>().ensureLocation();
+  void didPopNext() async {
+    await _loadCityPref();
+    await context.read<LocationProvider>().ensureLocation();
+    await context.read<JobPostingsProvider>().loadJobPostings();
+    if (mounted) setState(() {});
   }
 
   @override
@@ -55,8 +63,60 @@ class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
   }
 
   Future<void> _refresh() async {
-    await context.read<JobPostingsProvider>().loadJobPostings();
+    await _loadCityPref();
     await context.read<LocationProvider>().ensureLocation();
+    await context.read<JobPostingsProvider>().loadJobPostings();
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _loadCityPref() async {
+    final sp = await SharedPreferences.getInstance();
+    final mode = sp.getString(_kPrefCityMode) ?? 'auto';
+    final manual = sp.getString(_kPrefManualCity);
+    _cityMode = (mode == 'manual' && (manual == null || manual.trim().isEmpty))
+        ? 'auto'
+        : mode;
+    _manualCity = (manual != null && manual.trim().isNotEmpty)
+        ? manual.trim()
+        : null;
+  }
+
+  Future<void> _saveCityPref({required String mode, String? manualCity}) async {
+    final sp = await SharedPreferences.getInstance();
+    await sp.setString(_kPrefCityMode, mode);
+    if (manualCity == null || manualCity.trim().isEmpty) {
+      await sp.remove(_kPrefManualCity);
+    } else {
+      await sp.setString(_kPrefManualCity, manualCity.trim());
+    }
+    _cityMode = mode;
+    _manualCity = (manualCity == null || manualCity.trim().isEmpty)
+        ? null
+        : manualCity.trim();
+  }
+
+  /// 从地址里粗略提取 “xx市”
+  String? _guessCityFromAddress(String? addr) {
+    if (addr == null) return null;
+    final s = addr.trim();
+    if (s.isEmpty) return null;
+
+    // 常见：上海市/北京市/深圳市/杭州市...
+    final m = RegExp(r'([^省区县]{2,6}市)').firstMatch(s);
+    if (m != null) return m.group(1);
+
+    // 直辖市/特别情况：北京/上海/天津/重庆（有些地址不带“市”）
+    for (final c in ['北京', '上海', '天津', '重庆']) {
+      if (s.contains(c)) return '$c市';
+    }
+    return null;
+  }
+
+  /// 当前应该用哪个城市过滤（auto/manual）
+  String? _effectiveCity(LocationProvider loc) {
+    if (_cityMode == 'manual') return _manualCity;
+    final c = (loc.city ?? '').trim();
+    return c.isEmpty ? null : c;
   }
 
   /// 使用 LocationProvider + utils 统一计算距离
@@ -74,7 +134,6 @@ class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
     final now = DateTime.now();
     final todayDate = DateTime(now.year, now.month, now.day);
 
-    // ✅ 项目周期必须存在（后端会兜底，这里前端也兜底）
     if (p.projectStartDate == null || p.projectEndDate == null) {
       if (!mounted) return;
       showErrorSnackBar(context, '该任务所属项目未设置开始/结束日期，暂不可申请');
@@ -94,7 +153,6 @@ class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
       projectEnd.day,
     );
 
-    // ✅ 可选起始日：max(today, projectStart)
     final first = todayDate.isAfter(projectStartDate)
         ? todayDate
         : projectStartDate;
@@ -169,7 +227,6 @@ class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
 
     try {
       await provider.cancelApply(p.id);
-
       if (!mounted) return;
       showSuccessSnackBar(context, '申请已撤回');
       await _refresh();
@@ -259,6 +316,75 @@ class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
     );
   }
 
+  Widget _cityDropdown({
+    required LocationProvider loc,
+    required List<JobPosting> allItems,
+  }) {
+    final autoCity = (loc.city ?? '').trim();
+
+    final citySet = <String>{};
+    for (final p in allItems) {
+      final c = _guessCityFromAddress(p.storeAddress);
+      if (c != null && c.trim().isNotEmpty) citySet.add(c.trim());
+    }
+    final cities = citySet.toList()..sort();
+
+    String value;
+    if (_cityMode == 'manual' && _manualCity != null) {
+      value = 'manual:${_manualCity!}';
+    } else {
+      value = 'auto';
+    }
+
+    final items = <DropdownMenuItem<String>>[
+      DropdownMenuItem<String>(
+        value: 'auto',
+        child: Row(
+          children: [
+            const Icon(Icons.my_location, size: 18),
+            const SizedBox(width: 8),
+            Text(autoCity.isEmpty ? '自动定位（未知）' : '自动定位（$autoCity）'),
+          ],
+        ),
+      ),
+      if (cities.isNotEmpty)
+        const DropdownMenuItem<String>(
+          enabled: false,
+          value: '__divider__',
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: 6),
+            child: Text('手动选择', style: TextStyle(color: Colors.grey)),
+          ),
+        ),
+      ...cities.map((c) {
+        return DropdownMenuItem<String>(value: 'manual:$c', child: Text(c));
+      }),
+    ];
+
+    return DropdownButtonHideUnderline(
+      child: DropdownButton<String>(
+        value: value,
+        items: items,
+        onChanged: (v) async {
+          if (v == null || v == '__divider__') return;
+
+          if (v == 'auto') {
+            await _saveCityPref(mode: 'auto', manualCity: null);
+            await _refresh();
+            return;
+          }
+
+          if (v.startsWith('manual:')) {
+            final c = v.substring('manual:'.length).trim();
+            await _saveCityPref(mode: 'manual', manualCity: c);
+            await _refresh();
+            return;
+          }
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer2<JobPostingsProvider, LocationProvider>(
@@ -287,15 +413,37 @@ class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
           );
         }
 
-        final items = provider.jobPostings;
+        final allItems = provider.jobPostings;
+        final effectiveCity = _effectiveCity(loc);
+
+        final items = (effectiveCity == null || effectiveCity.trim().isEmpty)
+            ? allItems
+            : allItems.where((p) {
+                final c = _guessCityFromAddress(p.storeAddress);
+                return c == effectiveCity;
+              }).toList();
 
         if (items.isEmpty) {
           return RefreshIndicator(
             onRefresh: _refresh,
             child: ListView(
-              children: const [
-                SizedBox(height: 200),
-                Center(child: Text('当前没有可申请的任务')),
+              children: [
+                const SizedBox(height: 24),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: _cityDropdown(loc: loc, allItems: allItems),
+                  ),
+                ),
+                const SizedBox(height: 180),
+                Center(
+                  child: Text(
+                    effectiveCity == null
+                        ? '当前没有可申请的任务'
+                        : '当前城市（$effectiveCity）没有可申请的任务',
+                  ),
+                ),
               ],
             ),
           );
@@ -306,9 +454,19 @@ class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
         return RefreshIndicator(
           onRefresh: _refresh,
           child: ListView.builder(
-            itemCount: items.length,
+            itemCount: items.length + 1,
             itemBuilder: (context, index) {
-              final p = items[index];
+              if (index == 0) {
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: _cityDropdown(loc: loc, allItems: allItems),
+                  ),
+                );
+              }
+
+              final p = items[index - 1];
 
               final title = p.storeName != null && p.storeName!.isNotEmpty
                   ? '${p.clientName} - ${p.projectName} - ${p.storeName}'
@@ -334,7 +492,6 @@ class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      // 左侧竖条
                       Container(
                         width: 4,
                         height: 52,
@@ -352,7 +509,6 @@ class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
                       ),
                       const SizedBox(width: 12),
 
-                      // 中间内容
                       Expanded(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
@@ -385,7 +541,7 @@ class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
                                   AvoidDatesChip(
                                     rawDates: p.avoidVisitDates,
                                     ranges: p.avoidVisitDateRanges,
-                                    foldThreshold: 6, // 你要的 N 就改这里（最佳实践：集中控制）
+                                    foldThreshold: 6,
                                   ),
                                 if (storeLine != null)
                                   InfoChip(

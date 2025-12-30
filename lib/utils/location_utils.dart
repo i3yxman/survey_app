@@ -1,6 +1,7 @@
 // lib/utils/location_utils.dart
 
 import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 
 Future<Position?> determineUserPosition() async {
   try {
@@ -44,4 +45,20 @@ String? formatStoreDistance(
   } else {
     return '${(d / 1000).toStringAsFixed(1)} km';
   }
+}
+
+Future<String?> reverseGeocodeCity(double lat, double lng) async {
+  final placemarks = await placemarkFromCoordinates(lat, lng);
+  if (placemarks.isEmpty) return null;
+
+  final p = placemarks.first;
+
+  // iOS/Android 一般会给 locality；直辖市/部分地区可能在 administrativeArea
+  final city = (p.locality ?? '').trim();
+  if (city.isNotEmpty) return city.endsWith('市') ? city : '$city市';
+
+  final admin = (p.administrativeArea ?? '').trim();
+  if (admin.isNotEmpty) return admin.endsWith('市') ? admin : '$admin市';
+
+  return null;
 }
