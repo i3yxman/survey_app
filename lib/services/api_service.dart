@@ -90,6 +90,13 @@ class ApiService {
           handler.next(options);
         },
         onError: (e, handler) {
+          final status = e.response?.statusCode;
+
+          // ✅ 后端 token 失效/未登录统一处理
+          if (status == 401) {
+            clearAuthToken();
+          }
+
           handler.next(e);
         },
       ),
@@ -126,13 +133,36 @@ class ApiService {
     return data;
   }
 
+  List<dynamic> _extractList(dynamic data) {
+    final d = _normalizeData(data);
+
+    // 正常：后端直接返回 List
+    if (d is List) return d;
+
+    // 常见分页：{count, next, previous, results: []}
+    if (d is Map && d['results'] is List) {
+      return (d['results'] as List);
+    }
+
+    // 兼容你自定义 ok(data=xxx) 的包裹：{ok: true, data: []}
+    if (d is Map && d['data'] is List) {
+      return (d['data'] as List);
+    }
+
+    return const [];
+  }
+
   Never _throwDioError(DioException e, {String fallback = "请求失败"}) {
     final status = e.response?.statusCode;
     final normalized = _normalizeData(e.response?.data);
     final msg = ApiException.extractUserMessage(normalized);
+    // ✅ 统一把 401 变成更明确的提示
+    final userMsg = (status == 401)
+        ? "登录已失效，请重新登录"
+        : (msg.isNotEmpty ? msg : fallback);
 
     throw ApiException(
-      userMessage: (msg.isNotEmpty ? msg : fallback),
+      userMessage: userMsg,
       statusCode: status,
       body: normalized ?? e.message,
     );
@@ -244,11 +274,11 @@ class ApiService {
   Future<List<Assignment>> getMyAssignments() async {
     try {
       final resp = await _dio.get('/api/assignments/my-assignments/');
-      final data = _normalizeData(resp.data);
-      if (data is! List) {
-        throw ApiException(userMessage: "获取任务列表失败：返回格式错误");
-      }
-      return data.map((e) => Assignment.fromJson(e)).toList();
+      final list = _extractList(resp.data);
+
+      return list
+          .map((e) => Assignment.fromJson(e as Map<String, dynamic>))
+          .toList();
     } on DioException catch (e) {
       _throwDioError(e, fallback: "获取任务列表失败");
     } catch (e) {
@@ -259,11 +289,11 @@ class ApiService {
   Future<List<JobPosting>> getJobPostings() async {
     try {
       final resp = await _dio.get('/api/assignments/job-postings/');
-      final data = _normalizeData(resp.data);
-      if (data is! List) {
-        throw ApiException(userMessage: "获取任务大厅失败：返回格式错误");
-      }
-      return data.map((e) => JobPosting.fromJson(e)).toList();
+      final list = _extractList(resp.data);
+
+      return list
+          .map((e) => JobPosting.fromJson(e as Map<String, dynamic>))
+          .toList();
     } on DioException catch (e) {
       _throwDioError(e, fallback: "获取任务大厅失败");
     } catch (e) {
@@ -369,11 +399,8 @@ class ApiService {
         queryParameters: {'ids': ids.join(',')},
       );
 
-      final data = _normalizeData(resp.data);
-      if (data is! List) {
-        throw ApiException(userMessage: "获取媒体信息失败：返回格式错误");
-      }
-      return data
+      final list = _extractList(resp.data);
+      return list
           .map((e) => MediaFileDto.fromJson(e as Map<String, dynamic>))
           .toList();
     } on DioException catch (e) {
@@ -390,11 +417,9 @@ class ApiService {
       final resp = await _dio.get(
         '/api/assignments/submissions/$submissionId/comments/',
       );
-      final data = _normalizeData(resp.data);
-      if (data is! List) {
-        throw ApiException(userMessage: "加载沟通记录失败：返回格式错误");
-      }
-      return data
+
+      final list = _extractList(resp.data);
+      return list
           .map((e) => SubmissionCommentDto.fromJson(e as Map<String, dynamic>))
           .toList();
     } on DioException catch (e) {
@@ -447,11 +472,11 @@ class ApiService {
         '/api/assignments/submissions/',
         queryParameters: {'assignment': assignmentId},
       );
-      final data = _normalizeData(resp.data);
-      if (data is! List) {
-        throw ApiException(userMessage: "获取提交记录失败：返回格式错误");
-      }
-      return data.map((e) => SubmissionDto.fromJson(e)).toList();
+
+      final list = _extractList(resp.data);
+      return list
+          .map((e) => SubmissionDto.fromJson(e as Map<String, dynamic>))
+          .toList();
     } on DioException catch (e) {
       _throwDioError(e, fallback: "获取提交记录失败");
     } catch (e) {

@@ -54,6 +54,7 @@ dependencies:
   local_auth: ^2.3.0 # 面容ID / 指纹 / 生物识别
   flutter_secure_storage: ^9.0.0 # 安全保存账号密码
   intl: ^0.20.2
+  geocoding: ^3.0.0
 
   tpns_flutter_plugin:
     git:

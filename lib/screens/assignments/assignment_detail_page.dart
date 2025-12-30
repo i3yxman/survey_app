@@ -1,7 +1,5 @@
 // lib/screens/assignments/assignment_detail_page.dart
 
-// lib/screens/assignments/assignment_detail_page.dart
-
 import 'package:flutter/material.dart';
 import 'package:maps_launcher/maps_launcher.dart';
 

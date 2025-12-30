@@ -68,5 +68,19 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+	<!-- Amap / 高德 -->
+	<string>iosamap</string>
+
+	<!-- Baidu / 百度 -->
+	<string>baidumap</string>
+
+	<!-- Tencent / 腾讯 -->
+	<string>qqmap</string>
+
+	<!-- Google Maps（非国内才展示） -->
+	<string>comgooglemaps</string>
+	</array>
 </dict>
 </plist>

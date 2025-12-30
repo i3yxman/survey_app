@@ -1,14 +1,12 @@
 // lib/screens/assignments/my_assignments_page.dart
 
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../../utils/map_selector.dart';
 
 import '../../models/api_models.dart';
 import '../../providers/assignment_provider.dart';
-import '../../providers/location_provider.dart'; // ⭐ 新增
+import '../../providers/location_provider.dart';
 import '../../services/api_service.dart';
 import '../../widgets/info_chip.dart';
 import '../../utils/location_utils.dart';
@@ -86,30 +84,6 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> with RouteAware {
   void dispose() {
     routeObserver.unsubscribe(this);
     super.dispose();
-  }
-
-  /// 导航：保持原来的 Apple Maps / Google Maps 逻辑
-  Future<void> _launchNavigation(Assignment a) async {
-    final lat = a.storeLatitude;
-    final lng = a.storeLongitude;
-    if (lat == null || lng == null) return;
-
-    final label = a.storeName ?? a.clientName ?? '目的地';
-    final encodedLabel = Uri.encodeComponent(label);
-    Uri uri;
-
-    if (Platform.isIOS) {
-      uri = Uri.parse('http://maps.apple.com/?daddr=$lat,$lng&q=$encodedLabel');
-    } else {
-      uri = Uri.parse(
-        'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng',
-      );
-    }
-
-    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-      if (!mounted) return;
-      showErrorSnackBar(context, '无法打开地图应用');
-    }
   }
 
   Future<void> _handleCancelAssignment(Assignment assignment) async {
@@ -301,7 +275,14 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> with RouteAware {
           InfoChip(
             icon: Icons.navigation_outlined,
             text: '导航',
-            onTap: () => _launchNavigation(a),
+            onTap: () {
+              openMapSelector(
+                context: context,
+                lat: a.storeLatitude!,
+                lng: a.storeLongitude!,
+                label: a.storeName ?? a.clientName ?? '目的地',
+              );
+            },
           ),
       ],
     );
