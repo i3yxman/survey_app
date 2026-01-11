@@ -8,12 +8,15 @@ import 'package:video_player/video_player.dart';
 import 'package:video_thumbnail/video_thumbnail.dart' as vt;
 import 'package:wechat_assets_picker/wechat_assets_picker.dart';
 import 'package:wechat_camera_picker/wechat_camera_picker.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/api_models.dart';
 import '../../repositories/questionnaire_repository.dart';
 import '../../repositories/submission_repository.dart';
 import '../../utils/error_message.dart';
 import '../../utils/snackbar.dart';
+import '../../utils/status_format.dart';
 import 'submission_comments_page.dart';
 
 class _ChinesePickerTextDelegate extends AssetPickerTextDelegate {
@@ -62,6 +65,16 @@ class _ChinesePickerTextDelegate extends AssetPickerTextDelegate {
   String get edit => '编辑';
   @override
   String get gifIndicator => 'GIF';
+}
+
+class _DerivedQuestionState {
+  final bool visible;
+  final bool required;
+
+  _DerivedQuestionState({
+    required this.visible,
+    required this.required,
+  });
 }
 
 class _PendingUpload {
@@ -155,19 +168,74 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     return result;
   }
 
-  bool _isQuestionVisible(QuestionDto q) {
-    final incoming = _getIncomingLogics(q);
-    if (incoming.isEmpty) return true;
+  QuestionDto? _findQuestionById(int id) {
+    final questionnaire = _questionnaire;
+    if (questionnaire == null) return null;
+    for (final q in questionnaire.questions) {
+      if (q.id == id) return q;
+    }
+    return null;
+  }
+
+  bool _matchLogic(QuestionLogicDto lg) {
+    final fromDraft = _answers[lg.fromQuestionId];
+    if (fromDraft == null) return false;
+
+    bool ok = true;
+    if (lg.triggerOptionId != null) {
+      ok = ok && fromDraft.selectedOptionIds.contains(lg.triggerOptionId);
+    }
+    if (lg.triggerText != null && lg.triggerText!.trim().isNotEmpty) {
+      final hay = (fromDraft.textValue ?? '').toLowerCase();
+      ok = ok && hay.contains(lg.triggerText!.toLowerCase());
+    }
+    if (lg.triggerNumber != null) {
+      ok = ok && fromDraft.numberValue != null && fromDraft.numberValue == lg.triggerNumber;
+    }
+    if (lg.triggerOptionId == null &&
+        (lg.triggerText == null || lg.triggerText!.trim().isEmpty) &&
+        lg.triggerNumber == null) {
+      ok = true;
+    }
+    return ok;
+  }
+
+  _DerivedQuestionState _deriveQuestionState(QuestionDto q) {
+    final incoming = _getIncomingLogics(q)..sort((a, b) => a.order.compareTo(b.order));
+    bool visible = true;
+    bool required = q.required;
 
     for (final lg in incoming) {
-      final fromDraft = _answers[lg.fromQuestionId];
-      if (fromDraft == null) continue;
-      final triggerOptId = lg.triggerOptionId;
-      if (fromDraft.selectedOptionIds.contains(triggerOptId)) {
-        return true;
+      if (!_matchLogic(lg)) continue;
+      switch (lg.effect) {
+        case 'hide':
+          visible = false;
+          break;
+        case 'show':
+          visible = true;
+          break;
+        case 'require':
+          required = true;
+          break;
+        case 'optional':
+          required = false;
+          break;
       }
     }
-    return false;
+
+    return _DerivedQuestionState(
+      visible: visible,
+      required: required,
+    );
+  }
+
+  bool _isQuestionVisible(QuestionDto q) {
+    return _deriveQuestionState(q).visible;
+  }
+
+  bool _isQuestionRequired(QuestionDto q) {
+    final derived = _deriveQuestionState(q);
+    return derived.required;
   }
 
   bool _hasAnswer(QuestionDto q, AnswerDraft draft) {
@@ -176,11 +244,22 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
       case 'multi':
         return draft.selectedOptionIds.isNotEmpty;
       case 'text':
+      case 'short_text':
+      case 'long_text':
         return (draft.textValue?.trim().isNotEmpty ?? false);
       case 'number':
         return draft.numberValue != null;
+      case 'date':
+      case 'visit_date':
+        return draft.dateValue != null && draft.dateValue!.isNotEmpty;
+      case 'time':
+      case 'visit_time':
+        return draft.timeValue != null && draft.timeValue!.isNotEmpty;
+      case 'location':
+        return draft.locationLat != null && draft.locationLng != null;
       case 'image':
       case 'video':
+      case 'audio':
       case 'file':
         return draft.mediaFileIds.isNotEmpty;
       default:
@@ -189,7 +268,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
   }
 
   void _ensureControllersForQuestion(QuestionDto q, AnswerDraft draft) {
-    if (q.type == 'text') {
+    if (q.type == 'text' || q.type == 'short_text' || q.type == 'long_text') {
       _textControllers.putIfAbsent(q.id, () {
         final c = TextEditingController(text: draft.textValue ?? '');
         c.addListener(() {
@@ -240,7 +319,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
 
     try {
       final results = await Future.wait([
-        _qRepo.fetchDetail(qId),
+        _qRepo.fetchDetail(qId, assignmentId: _assignment.id),
         _subRepo.getSubmissions(_assignment.id),
       ]);
 
@@ -250,6 +329,19 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
       final draftMap = <int, AnswerDraft>{};
       for (final qu in q.questions) {
         draftMap[qu.id] = AnswerDraft(questionId: qu.id);
+      }
+      if (_assignment.plannedVisitDate != null) {
+        final planned = _assignment.plannedVisitDate!;
+        final plannedDate =
+            '${planned.year.toString().padLeft(4, '0')}-${planned.month.toString().padLeft(2, '0')}-${planned.day.toString().padLeft(2, '0')}';
+        for (final qu in q.questions) {
+          if (qu.type == 'visit_date') {
+            final d = draftMap[qu.id];
+            if (d != null && (d.dateValue == null || d.dateValue!.isEmpty)) {
+              d.dateValue = plannedDate;
+            }
+          }
+        }
       }
 
       SubmissionDto? latest;
@@ -267,6 +359,11 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
           if (d == null) continue;
           d.textValue = ans.textValue;
           d.numberValue = ans.numberValue;
+          d.dateValue = ans.dateValue;
+          d.timeValue = ans.timeValue;
+          d.locationLat = ans.locationLat;
+          d.locationLng = ans.locationLng;
+          d.locationAddress = ans.locationAddress;
           d.selectedOptionIds = List<int>.from(ans.selectedOptionIds);
           d.mediaFileIds = List<int>.from(ans.mediaFileIds);
         }
@@ -341,7 +438,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
 
     final visibleQuestions = q.questions.where(_isQuestionVisible).toList();
     for (final qu in visibleQuestions) {
-      if (!qu.required) continue;
+      if (!_isQuestionRequired(qu)) continue;
       final draft = _answers[qu.id]!;
       if (!_hasAnswer(qu, draft)) {
         showErrorSnackBar(context, '还有必答题未填写：${qu.text}');
@@ -413,17 +510,23 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
   }
 
   Future<List<AssetEntity>?> _pickAssetsByType(String mediaType) {
-    final bool pickImage = mediaType == 'image';
+    final AssetType assetType = mediaType == 'image'
+        ? AssetType.image
+        : mediaType == 'video'
+            ? AssetType.video
+            : AssetType.audio;
 
     final filterOptions = FilterOptionGroup()
       ..setOption(
-        pickImage ? AssetType.image : AssetType.video,
+        assetType,
         const FilterOption(),
       );
 
-    final RequestType requestType = pickImage
+    final RequestType requestType = mediaType == 'image'
         ? RequestType.image
-        : RequestType.video;
+        : mediaType == 'video'
+            ? RequestType.video
+            : RequestType.audio;
 
     return AssetPicker.pickAssets(
       context,
@@ -447,8 +550,13 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) {
+        final label = mediaType == 'image'
+            ? '图片'
+            : mediaType == 'video'
+                ? '视频'
+                : '音频';
         return AlertDialog(
-          title: Text(mediaType == 'image' ? '上传图片' : '上传视频'),
+          title: Text('上传$label'),
           content: Text('已选择 ${assets.length} 个文件，是否立即上传？'),
           actions: [
             TextButton(
@@ -525,7 +633,9 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
 
       final successMsg = mediaType == 'image'
           ? '成功上传 $successFiles 张图片'
-          : '成功上传 $successFiles 段视频';
+          : mediaType == 'video'
+              ? '成功上传 $successFiles 段视频'
+              : '成功上传 $successFiles 段音频';
       showSuccessSnackBar(context, successMsg);
     } catch (e) {
       if (!mounted) return;
@@ -556,20 +666,28 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     final String? choice = await showModalBottomSheet<String>(
       context: context,
       builder: (ctx) {
+        final isAudio = mediaType == 'audio';
         return SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              ListTile(
-                leading: Icon(
-                  mediaType == 'image' ? Icons.photo_camera : Icons.videocam,
+              if (!isAudio)
+                ListTile(
+                  leading: Icon(
+                    mediaType == 'image' ? Icons.photo_camera : Icons.videocam,
+                  ),
+                  title: Text(mediaType == 'image' ? '拍照上传' : '拍摄视频上传'),
+                  onTap: () => Navigator.of(ctx).pop('camera'),
                 ),
-                title: Text(mediaType == 'image' ? '拍照上传' : '拍摄视频上传'),
-                onTap: () => Navigator.of(ctx).pop('camera'),
-              ),
               ListTile(
-                leading: const Icon(Icons.photo_library),
-                title: Text(mediaType == 'image' ? '从相册选择图片' : '从相册选择视频'),
+                leading: Icon(isAudio ? Icons.audiotrack : Icons.photo_library),
+                title: Text(
+                  mediaType == 'image'
+                      ? '从相册选择图片'
+                      : mediaType == 'video'
+                          ? '从相册选择视频'
+                          : '选择音频文件',
+                ),
                 onTap: () => Navigator.of(ctx).pop('gallery'),
               ),
               const Divider(height: 0),
@@ -722,13 +840,18 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                           ImageGalleryPage(images: mediaList, initialIndex: i),
                     ),
                   );
-                } else {
+                } else if (mediaType == "video") {
                   Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (_) =>
                           VideoGalleryPage(videos: mediaList, initialIndex: i),
                     ),
                   );
+                } else if (mediaType == "audio") {
+                  final url = mediaList[i].fileUrl;
+                  if (url.isNotEmpty) {
+                    launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+                  }
                 }
               },
               child: Stack(
@@ -743,30 +866,41 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                               mediaList[i].fileUrl,
                               fit: BoxFit.cover,
                             )
-                          : FutureBuilder<Uint8List?>(
-                              future: _loadVideoThumbnail(
-                                mediaList[i].id,
-                                mediaList[i].fileUrl,
-                              ),
-                              builder: (context, snapshot) {
-                                if (snapshot.hasData && snapshot.data != null) {
-                                  return Image.memory(
-                                    snapshot.data!,
-                                    fit: BoxFit.cover,
-                                  );
-                                }
-                                return Container(
-                                  color: Colors.black87,
+                          : mediaType == 'video'
+                              ? FutureBuilder<Uint8List?>(
+                                  future: _loadVideoThumbnail(
+                                    mediaList[i].id,
+                                    mediaList[i].fileUrl,
+                                  ),
+                                  builder: (context, snapshot) {
+                                    if (snapshot.hasData && snapshot.data != null) {
+                                      return Image.memory(
+                                        snapshot.data!,
+                                        fit: BoxFit.cover,
+                                      );
+                                    }
+                                    return Container(
+                                      color: Colors.black87,
+                                      child: const Center(
+                                        child: Icon(
+                                          Icons.videocam,
+                                          color: Colors.white54,
+                                          size: 28,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                )
+                              : Container(
+                                  color: Colors.blueGrey.shade900,
                                   child: const Center(
                                     child: Icon(
-                                      Icons.videocam,
-                                      color: Colors.white54,
+                                      Icons.audiotrack,
+                                      color: Colors.white70,
                                       size: 28,
                                     ),
                                   ),
-                                );
-                              },
-                            ),
+                                ),
                     ),
                   ),
                   Positioned(
@@ -804,12 +938,23 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                       children: [
                         if (pending.mediaType == 'image')
                           Image.file(File(pending.path), fit: BoxFit.cover)
-                        else
+                        else if (pending.mediaType == 'video')
                           Container(
                             color: Colors.black87,
                             child: const Center(
                               child: Icon(
                                 Icons.videocam,
+                                color: Colors.white54,
+                                size: 28,
+                              ),
+                            ),
+                          )
+                        else
+                          Container(
+                            color: Colors.blueGrey.shade900,
+                            child: const Center(
+                              child: Icon(
+                                Icons.audiotrack,
                                 color: Colors.white54,
                                 size: 28,
                               ),
@@ -882,6 +1027,13 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     _ensureControllersForQuestion(q, draft);
 
     switch (q.type) {
+      case 'title':
+        return Text(
+          q.text,
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+        );
       case 'single':
         return Column(
           children: [
@@ -926,13 +1078,24 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
           ],
         );
       case 'text':
+      case 'short_text':
         return TextFormField(
           controller: _textControllers[q.id],
-          maxLines: null,
+          maxLines: 1,
           readOnly: readOnly,
           decoration: const InputDecoration(
             border: OutlineInputBorder(),
             hintText: '请输入内容',
+          ),
+        );
+      case 'long_text':
+        return TextFormField(
+          controller: _textControllers[q.id],
+          maxLines: 4,
+          readOnly: readOnly,
+          decoration: const InputDecoration(
+            border: OutlineInputBorder(),
+            hintText: '请输入详细内容',
           ),
         );
       case 'number':
@@ -944,6 +1107,201 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
             border: OutlineInputBorder(),
             hintText: '请输入数字',
           ),
+        );
+      case 'date':
+      case 'visit_date':
+        return Row(
+          children: [
+            Expanded(
+              child: TextFormField(
+                readOnly: true,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: '选择日期',
+                ),
+                controller: TextEditingController(text: draft.dateValue ?? ''),
+              ),
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton(
+              onPressed: readOnly
+                  ? null
+                  : () async {
+                      final now = DateTime.now();
+                      DateTime first = DateTime(now.year - 1);
+                      DateTime last = DateTime(now.year + 2);
+                      Set<DateTime> avoidDates = {};
+
+                      if (q.type == 'visit_date') {
+                        final projectStart = _assignment.projectStartDate;
+                        final projectEnd = _assignment.projectEndDate;
+                        if (projectStart != null && projectEnd != null) {
+                          final start = DateTime(
+                            projectStart.year,
+                            projectStart.month,
+                            projectStart.day,
+                          );
+                          final end = DateTime(
+                            projectEnd.year,
+                            projectEnd.month,
+                            projectEnd.day,
+                          );
+                          first = start.isAfter(now)
+                              ? start
+                              : DateTime(now.year, now.month, now.day);
+                          last = end;
+                        }
+                        avoidDates = _assignment.avoidVisitDates
+                            .map((e) => DateTime.parse(e))
+                            .map((d) => DateTime(d.year, d.month, d.day))
+                            .toSet();
+                      }
+
+                      if (first.isAfter(last)) {
+                        if (!context.mounted) return;
+                        showErrorSnackBar(context, '项目周期已结束，无法选择日期');
+                        return;
+                      }
+
+                      DateTime? findFirstSelectable(
+                        DateTime start,
+                        DateTime end,
+                        Set<DateTime> blocked,
+                      ) {
+                        var cur = DateTime(start.year, start.month, start.day);
+                        final lastDate = DateTime(end.year, end.month, end.day);
+                        while (!cur.isAfter(lastDate)) {
+                          if (!blocked.contains(cur)) return cur;
+                          cur = cur.add(const Duration(days: 1));
+                        }
+                        return null;
+                      }
+
+                      DateTime? initialDate;
+                      if (draft.dateValue != null && draft.dateValue!.isNotEmpty) {
+                        final parsed = DateTime.tryParse(draft.dateValue!);
+                        if (parsed != null &&
+                            !parsed.isBefore(first) &&
+                            !parsed.isAfter(last) &&
+                            !avoidDates.contains(DateTime(parsed.year, parsed.month, parsed.day))) {
+                          initialDate = DateTime(parsed.year, parsed.month, parsed.day);
+                        }
+                      }
+                      initialDate ??= findFirstSelectable(first, last, avoidDates);
+                      if (initialDate == null) {
+                        if (!context.mounted) return;
+                        showErrorSnackBar(context, '项目周期内无可选日期');
+                        return;
+                      }
+
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: initialDate,
+                        firstDate: first,
+                        lastDate: last,
+                        selectableDayPredicate: q.type == 'visit_date'
+                            ? (day) {
+                                final d = DateTime(day.year, day.month, day.day);
+                                return !avoidDates.contains(d);
+                              }
+                            : null,
+                      );
+                      if (picked == null) return;
+                      setState(() {
+                        draft.dateValue =
+                            '${picked.year.toString().padLeft(4, '0')}-'
+                            '${picked.month.toString().padLeft(2, '0')}-'
+                            '${picked.day.toString().padLeft(2, '0')}';
+                      });
+                    },
+              child: const Text('选择日期'),
+            ),
+          ],
+        );
+      case 'time':
+      case 'visit_time':
+        return Row(
+          children: [
+            Expanded(
+              child: TextFormField(
+                readOnly: true,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: '选择时间',
+                ),
+                controller: TextEditingController(text: draft.timeValue ?? ''),
+              ),
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton(
+              onPressed: readOnly
+                  ? null
+                  : () async {
+                      final picked = await showTimePicker(
+                        context: context,
+                        initialTime: TimeOfDay.now(),
+                      );
+                      if (picked == null) return;
+                      setState(() {
+                        draft.timeValue =
+                            '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
+                      });
+                    },
+              child: const Text('选择时间'),
+            ),
+          ],
+        );
+      case 'location':
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    draft.locationLat != null && draft.locationLng != null
+                        ? '已定位：${draft.locationLat}, ${draft.locationLng}'
+                        : '未定位',
+                  ),
+                ),
+                OutlinedButton(
+                  onPressed: readOnly
+                      ? null
+                      : () async {
+                          final perm = await Geolocator.checkPermission();
+                          if (perm == LocationPermission.denied ||
+                              perm == LocationPermission.deniedForever) {
+                            final req = await Geolocator.requestPermission();
+                            if (req == LocationPermission.denied ||
+                                req == LocationPermission.deniedForever) {
+                              showErrorSnackBar(context, '定位权限被拒绝');
+                              return;
+                            }
+                          }
+                          final pos = await Geolocator.getCurrentPosition();
+                          setState(() {
+                            draft.locationLat = pos.latitude;
+                            draft.locationLng = pos.longitude;
+                          });
+                        },
+                  child: const Text('获取定位'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            TextFormField(
+              initialValue: draft.locationAddress ?? '',
+              readOnly: readOnly,
+              maxLines: 2,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                hintText: '地址描述（可选）',
+              ),
+              onChanged: (v) {
+                draft.locationAddress = v;
+              },
+            ),
+          ],
         );
       case 'image':
         return Column(
@@ -1025,6 +1383,47 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
             ],
           ],
         );
+      case 'audio':
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '音频上传题目（可上传多段音频）',
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: Colors.grey),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Text('已上传：${draft.mediaFileIds.length} 段'),
+                const SizedBox(width: 8),
+                if (draft.isUploadingMedia)
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton(
+              onPressed: readOnly || draft.isUploadingMedia
+                  ? null
+                  : () => _pickAndUploadMedia(q, draft, 'audio'),
+              child: const Text('上传音频'),
+            ),
+            _buildMediaThumbnails(q, draft, 'audio'),
+            if (draft.mediaError != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                draft.mediaError!,
+                style: const TextStyle(color: Colors.red, fontSize: 12),
+              ),
+            ],
+          ],
+        );
       default:
         return Text(
           '暂不支持的题目类型：${q.type}',
@@ -1042,23 +1441,25 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     if (_error != null) {
       return Scaffold(
         appBar: AppBar(title: const Text('问卷填写')),
-        body: Center(
-          child: Padding(
+        body: SafeArea(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _error!,
-                  style: const TextStyle(color: Colors.red),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 12),
-                ElevatedButton(
-                  onPressed: _loadQuestionnaireAndSubmission,
-                  child: const Text('重试'),
-                ),
-              ],
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _error!,
+                    style: const TextStyle(color: Colors.red),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  ElevatedButton(
+                    onPressed: _loadQuestionnaireAndSubmission,
+                    child: const Text('重试'),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -1076,10 +1477,12 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     final theme = Theme.of(context);
 
     final visibleQuestions = q.questions.where(_isQuestionVisible).toList();
-    final total = visibleQuestions.length;
+    final progressQuestions =
+        visibleQuestions.where((item) => item.type != 'title').toList();
+    final total = progressQuestions.length;
 
     int answeredCount = 0;
-    for (final qu in visibleQuestions) {
+    for (final qu in progressQuestions) {
       final d = _answers[qu.id];
       if (d != null && _hasAnswer(qu, d)) {
         answeredCount++;
@@ -1113,13 +1516,15 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
       child: Scaffold(
         appBar: AppBar(
           centerTitle: false,
+          backgroundColor: theme.colorScheme.surface,
+          foregroundColor: theme.colorScheme.onSurface,
           title: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 _assignment.questionnaireTitle ?? '问卷填写',
                 style: theme.textTheme.titleMedium?.copyWith(
-                  color: theme.colorScheme.onPrimary,
+                  color: theme.colorScheme.onSurface,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -1129,7 +1534,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                 Text(
                   subtitleText,
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onPrimary.withValues(alpha: 0.8),
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -1141,127 +1546,158 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
         body: SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                Row(
+            child: CustomScrollView(
+              slivers: [
+              SliverToBoxAdapter(
+                child: Column(
                   children: [
-                    Expanded(
-                      child: LinearProgressIndicator(value: progressValue),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: LinearProgressIndicator(value: progressValue),
+                        ),
+                        const SizedBox(width: 12),
+                        Text('$answeredCount/$total'),
+                      ],
                     ),
-                    const SizedBox(width: 12),
-                    Text('$answeredCount/$total'),
+                    const SizedBox(height: 16),
                   ],
                 ),
-                const SizedBox(height: 16),
-                Expanded(
-                  child: ListView.separated(
-                    itemCount: visibleQuestions.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 12),
-                    itemBuilder: (context, index) {
-                      final qu = visibleQuestions[index];
-                      final draft =
-                          _answers[qu.id] ?? AnswerDraft(questionId: qu.id);
+              ),
+              SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    final qu = visibleQuestions[index];
+                    final draft =
+                        _answers[qu.id] ?? AnswerDraft(questionId: qu.id);
+                    final derived = _deriveQuestionState(qu);
 
-                      return Card(
+                    return Padding(
+                      padding: EdgeInsets.only(
+                        bottom: index == visibleQuestions.length - 1 ? 0 : 12,
+                      ),
+                      child: Card(
                         child: Padding(
                           padding: const EdgeInsets.all(16),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  if (qu.required)
-                                    const Text(
-                                      '* ',
-                                      style: TextStyle(
-                                        color: Colors.red,
-                                        fontWeight: FontWeight.bold,
+                              if (qu.type == 'title')
+                                Text(
+                                  qu.text,
+                                  style: theme.textTheme.titleLarge?.copyWith(
+                                    fontSize: qu.fontSize.toDouble(),
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                )
+                              else ...[
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    if (derived.required)
+                                      const Text(
+                                        '* ',
+                                        style: TextStyle(
+                                          color: Colors.red,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    Expanded(
+                                      child: Text(
+                                        qu.text,
+                                        style: theme.textTheme.titleMedium?.copyWith(
+                                          fontSize: qu.fontSize.toDouble(),
+                                        ),
                                       ),
                                     ),
-                                  Expanded(
-                                    child: Text(
-                                      qu.text,
-                                      style: theme.textTheme.titleMedium,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-                              _buildQuestionBody(qu, draft),
+                                    if (qu.score > 0)
+                                      Container(
+                                        margin: const EdgeInsets.only(left: 6, top: 2),
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: Colors.blue.shade50,
+                                          borderRadius: BorderRadius.circular(999),
+                                        ),
+                                        child: Text(
+                                          '${qu.score}分',
+                                          style: TextStyle(
+                                            color: Colors.blue.shade700,
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                _buildQuestionBody(qu, draft),
+                              ],
                             ],
                           ),
                         ),
-                      );
-                    },
-                  ),
+                      ),
+                    );
+                  },
+                  childCount: visibleQuestions.length,
                 ),
-                const SizedBox(height: 12),
-                if (!_isReadOnly) ...[
-                  Row(
+              ),
+              const SliverToBoxAdapter(child: SizedBox(height: 12)),
+              if (!_isReadOnly)
+                SliverToBoxAdapter(
+                  child: Column(
                     children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: (_savingDraft || _hasUploadingMedia)
-                              ? null
-                              : _saveDraft,
-                          child: _savingDraft
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Text('保存草稿'),
-                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: (_savingDraft || _hasUploadingMedia)
+                                  ? null
+                                  : _saveDraft,
+                              child: _savingDraft
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Text('保存草稿'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: (_submitting || _hasUploadingMedia)
+                                  ? null
+                                  : _submit,
+                              child: _submitting
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor: AlwaysStoppedAnimation(
+                                          Colors.white,
+                                        ),
+                                      ),
+                                    )
+                                  : const Text('提交问卷'),
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: (_submitting || _hasUploadingMedia)
-                              ? null
-                              : _submit,
-                          child: _submitting
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation(
-                                      Colors.white,
-                                    ),
-                                  ),
-                                )
-                              : const Text('提交问卷'),
-                        ),
-                      ),
+                      const SizedBox(height: 8),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                ],
-                Align(
+                ),
+              SliverToBoxAdapter(
+                child: Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
                     () {
-                      final baseText = () {
-                        switch (_submissionStatus) {
-                          case 'draft':
-                            return '当前状态：草稿（尚未提交）';
-                          case 'submitted':
-                            return '当前状态：已提交（待审核）';
-                          case 'needs_revision':
-                            return '当前状态：待修改（请查看审核说明）';
-                          case 'resubmitted':
-                            return '当前状态：已重新提交（待审核）';
-                          case 'approved':
-                            return '当前状态：已通过审核';
-                          case 'cancelled':
-                            return '当前状态：已作废';
-                          default:
-                            return '当前状态：未保存';
-                        }
-                      }();
+                      final baseText = _submissionStatus == null
+                          ? '当前状态：未保存'
+                          : '当前状态：${formatStatusLabel(_submissionStatus)}';
                       return _isReadOnly ? '$baseText（仅供查看）' : baseText;
                     }(),
                     style: theme.textTheme.bodySmall?.copyWith(
@@ -1269,27 +1705,33 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                     ),
                   ),
                 ),
-                if (_submissionId != null) ...[
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      icon: const Icon(Icons.chat_bubble_outline),
-                      label: const Text('查看审核沟通'),
-                      onPressed: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => SubmissionCommentsPage(
-                              submissionId: _submissionId!,
-                              title: _assignment.questionnaireTitle ?? '审核沟通',
-                              status: _submissionStatus,
+              ),
+              if (_submissionId != null)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        icon: const Icon(Icons.chat_bubble_outline),
+                        label: const Text('查看审核沟通'),
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => SubmissionCommentsPage(
+                                submissionId: _submissionId!,
+                                title:
+                                    _assignment.questionnaireTitle ?? '审核沟通',
+                                status: _submissionStatus,
+                              ),
                             ),
-                          ),
-                        );
-                      },
+                          );
+                        },
+                      ),
                     ),
-                  ),
-                ],
+                ),
+              ),
+              const SliverToBoxAdapter(child: SizedBox(height: 16)),
               ],
             ),
           ),

@@ -1,11 +1,23 @@
 // lib/models/api_models.dart
 
+import 'package:survey_app/utils/date_format.dart';
+
 /// 登录成功返回的数据结构
 class LoginResult {
   final String token; // ✅ 新增：DRF Token
   final int id;
   final String username;
   final String role;
+  final String? email;
+  final String? phone;
+  final String? fullName;
+  final String? gender;
+  final String? idNumber;
+  final String? province;
+  final String? city;
+  final String? address;
+  final String? alipayAccount;
+  final Map<String, dynamic>? notificationSettings;
 
   // 下面这些是你旧接口里可能用到的字段，先保留为可选，避免别处爆炸
   final String? status;
@@ -16,6 +28,16 @@ class LoginResult {
     required this.id,
     required this.username,
     required this.role,
+    this.email,
+    this.phone,
+    this.fullName,
+    this.gender,
+    this.idNumber,
+    this.province,
+    this.city,
+    this.address,
+    this.alipayAccount,
+    this.notificationSettings,
     this.status,
     this.applicationStatus,
   });
@@ -26,8 +48,54 @@ class LoginResult {
       id: (json['id'] as int?) ?? 0,
       username: (json['username'] as String?) ?? '',
       role: (json['role'] as String?) ?? '',
+      email: json['email'] as String?,
+      phone: json['phone'] as String?,
+      fullName: json['full_name'] as String?,
+      gender: json['gender'] as String?,
+      idNumber: json['id_number'] as String?,
+      province: json['province'] as String?,
+      city: json['city'] as String?,
+      address: json['address'] as String?,
+      alipayAccount: json['alipay_account'] as String?,
+      notificationSettings: (json['notification_settings'] as Map?)?.cast<String, dynamic>(),
       status: json['status'] as String?,
       applicationStatus: json['application_status'] as String?,
+    );
+  }
+
+  LoginResult copyWith({
+    String? token,
+    int? id,
+    String? username,
+    String? role,
+    String? email,
+    String? phone,
+    String? fullName,
+    String? gender,
+    String? idNumber,
+    String? province,
+    String? city,
+    String? address,
+    String? alipayAccount,
+    Map<String, dynamic>? notificationSettings,
+  }) {
+    return LoginResult(
+      token: token ?? this.token,
+      id: id ?? this.id,
+      username: username ?? this.username,
+      role: role ?? this.role,
+      email: email ?? this.email,
+      phone: phone ?? this.phone,
+      fullName: fullName ?? this.fullName,
+      gender: gender ?? this.gender,
+      idNumber: idNumber ?? this.idNumber,
+      province: province ?? this.province,
+      city: city ?? this.city,
+      address: address ?? this.address,
+      alipayAccount: alipayAccount ?? this.alipayAccount,
+      notificationSettings: notificationSettings ?? this.notificationSettings,
+      status: status,
+      applicationStatus: applicationStatus,
     );
   }
 }
@@ -38,24 +106,31 @@ class Assignment {
   final String status;
   final DateTime createdAt;
 
-  String get createdAtText =>
-      "${createdAt.year}-${createdAt.month.toString().padLeft(2, '0')}-${createdAt.day.toString().padLeft(2, '0')}";
+  String get createdAtText => formatDateTimeZh(createdAt);
 
   String? get projectDateRange {
     if (projectStartDate == null || projectEndDate == null) return null;
-    return "${projectStartDate!.year}-${projectStartDate!.month.toString().padLeft(2, '0')}-${projectStartDate!.day.toString().padLeft(2, '0')}"
-        " ~ "
-        "${projectEndDate!.year}-${projectEndDate!.month.toString().padLeft(2, '0')}-${projectEndDate!.day.toString().padLeft(2, '0')}";
+    return "${formatDateZh(projectStartDate)} ~ ${formatDateZh(projectEndDate)}";
   }
 
   String? get plannedVisitDateText {
     if (plannedVisitDate == null) return null;
-    return "${plannedVisitDate!.year}-${plannedVisitDate!.month.toString().padLeft(2, '0')}-${plannedVisitDate!.day.toString().padLeft(2, '0')}";
+    return formatDateZh(plannedVisitDate);
   }
 
   final DateTime? projectStartDate;
   final DateTime? projectEndDate;
+  final double? rewardAmount;
+  final double? reimbursementAmount;
+  final String? currency;
   final DateTime? plannedVisitDate;
+  final List<String> avoidVisitDates;
+  final List<Map<String, String>> avoidVisitDateRanges;
+  final String? postingTitle;
+  final String? postingDescription;
+  final String? taskContent;
+  final String? currentSubmissionStatus;
+  final List<TaskAttachment> taskAttachments;
 
   final int? jobPosting;
 
@@ -84,7 +159,18 @@ class Assignment {
 
     this.projectStartDate,
     this.projectEndDate,
+    this.rewardAmount,
+    this.reimbursementAmount,
+    this.currency,
     this.plannedVisitDate,
+    this.avoidVisitDates = const [],
+    this.avoidVisitDateRanges = const [],
+
+    this.postingTitle,
+    this.postingDescription,
+    this.taskContent,
+    this.currentSubmissionStatus,
+    this.taskAttachments = const [],
 
     this.jobPosting,
 
@@ -131,9 +217,28 @@ class Assignment {
       projectEndDate: json['project_end_date'] != null
           ? DateTime.parse(json['project_end_date'])
           : null,
+      rewardAmount: toDouble(json['reward_amount']),
+      reimbursementAmount: toDouble(json['reimbursement_amount']),
+      currency: json['currency']?.toString(),
       plannedVisitDate: json['planned_visit_date'] != null
           ? DateTime.parse(json['planned_visit_date'])
           : null,
+      avoidVisitDates: (json['avoid_visit_dates'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
+      avoidVisitDateRanges: (json['avoid_visit_date_ranges'] as List<dynamic>?)
+              ?.map((e) => Map<String, String>.from(e as Map))
+              .toList() ??
+          const [],
+      postingTitle: json['posting_title']?.toString(),
+      postingDescription: json['posting_description']?.toString(),
+      taskContent: json['task_content']?.toString(),
+      currentSubmissionStatus: json['current_submission_status']?.toString(),
+      taskAttachments: (json['task_attachments'] as List<dynamic>?)
+              ?.map((e) => TaskAttachment.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const [],
       questionnaire: json['questionnaire'] as int?,
       questionnaireTitle: json['questionnaire_title']?.toString(),
       clientName: json['client_name']?.toString(),
@@ -160,10 +265,18 @@ class Assignment {
         10,
       ),
       'project_end_date': projectEndDate?.toIso8601String().substring(0, 10),
+      'reward_amount': rewardAmount,
+      'reimbursement_amount': reimbursementAmount,
       'planned_visit_date': plannedVisitDate?.toIso8601String().substring(
         0,
         10,
       ),
+
+      'posting_title': postingTitle,
+      'posting_description': postingDescription,
+      'task_content': taskContent,
+      'current_submission_status': currentSubmissionStatus,
+      'task_attachments': taskAttachments.map((e) => e.toJson()).toList(),
 
       'job_posting': jobPosting,
       'project': project,
@@ -183,11 +296,49 @@ class Assignment {
   }
 }
 
+class TaskAttachment {
+  final int id;
+  final String mediaType;
+  final String? name;
+  final String url;
+  final int? size;
+
+  TaskAttachment({
+    required this.id,
+    required this.mediaType,
+    required this.url,
+    this.name,
+    this.size,
+  });
+
+  factory TaskAttachment.fromJson(Map<String, dynamic> json) {
+    return TaskAttachment(
+      id: json['id'] as int,
+      mediaType: json['media_type']?.toString() ?? 'file',
+      name: json['name']?.toString(),
+      url: json['url']?.toString() ?? json['file_url']?.toString() ?? '',
+      size: json['size'] as int?,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'media_type': mediaType,
+      'name': name,
+      'url': url,
+      'size': size,
+    };
+  }
+}
+
 /// 任务大厅里的“可申请任务”模型
 class JobPosting {
   final int id;
   final String title;
   final String description;
+  final String? taskContent;
+  final List<TaskAttachment> taskAttachments;
 
   /// JobPosting 本身的状态（open / assigned / closed）
   final String status;
@@ -207,6 +358,9 @@ class JobPosting {
 
   final String? projectStartDate;
   final String? projectEndDate;
+  final double? rewardAmount;
+  final double? reimbursementAmount;
+  final String? currency;
   final List<String> avoidVisitDates;
   final List<Map<String, String>> avoidVisitDateRanges;
   final String? plannedVisitDate;
@@ -226,6 +380,8 @@ class JobPosting {
     required this.id,
     required this.title,
     required this.description,
+    this.taskContent,
+    this.taskAttachments = const [],
     required this.status,
     this.applicationStatus, // ⭐ 不是 required
     required this.clientId,
@@ -239,6 +395,9 @@ class JobPosting {
     this.plannedVisitDate,
     this.projectStartDate,
     this.projectEndDate,
+    this.rewardAmount,
+    this.reimbursementAmount,
+    this.currency,
     this.avoidVisitDates = const [],
     this.avoidVisitDateRanges = const [],
     this.storeId,
@@ -255,6 +414,11 @@ class JobPosting {
       id: json['id'] as int,
       title: json['title'] as String? ?? '',
       description: json['description'] as String? ?? '',
+      taskContent: json['task_content']?.toString(),
+      taskAttachments: (json['task_attachments'] as List<dynamic>?)
+              ?.map((e) => TaskAttachment.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const [],
       status:
           (json['status'] as String?) ?? (json['new_status'] as String?) ?? '',
       applicationStatus: json['application_status'] as String?, // ⭐ 新字段
@@ -267,6 +431,9 @@ class JobPosting {
       plannedVisitDate: json['planned_visit_date'] as String?,
       projectStartDate: json['project_start_date'] as String?,
       projectEndDate: json['project_end_date'] as String?,
+      rewardAmount: (json['reward_amount'] as num?)?.toDouble(),
+      reimbursementAmount: (json['reimbursement_amount'] as num?)?.toDouble(),
+      currency: json['currency']?.toString(),
       avoidVisitDates:
           (json['avoid_visit_dates'] as List<dynamic>?)
               ?.map((e) => e.toString())
@@ -306,6 +473,8 @@ class JobPosting {
     int? id,
     String? title,
     String? description,
+    String? taskContent,
+    List<TaskAttachment>? taskAttachments,
     String? status,
     String? applicationStatus,
     int? clientId,
@@ -314,6 +483,9 @@ class JobPosting {
     String? projectName,
     int? questionnaireId,
     String? questionnaireTitle,
+    double? rewardAmount,
+    double? reimbursementAmount,
+    String? currency,
     int? storeId,
     String? storeCode,
     String? storeName,
@@ -328,6 +500,8 @@ class JobPosting {
       id: id ?? this.id,
       title: title ?? this.title,
       description: description ?? this.description,
+      taskContent: taskContent ?? this.taskContent,
+      taskAttachments: taskAttachments ?? this.taskAttachments,
       status: status ?? this.status,
       applicationStatus: applicationStatus ?? this.applicationStatus,
       clientId: clientId ?? this.clientId,
@@ -336,6 +510,9 @@ class JobPosting {
       projectName: projectName ?? this.projectName,
       questionnaireId: questionnaireId ?? this.questionnaireId,
       questionnaireTitle: questionnaireTitle ?? this.questionnaireTitle,
+      rewardAmount: rewardAmount ?? this.rewardAmount,
+      reimbursementAmount: reimbursementAmount ?? this.reimbursementAmount,
+      currency: currency ?? this.currency,
       storeId: storeId ?? this.storeId,
       storeCode: storeCode ?? this.storeCode,
       storeName: storeName ?? this.storeName,
@@ -385,25 +562,39 @@ class QuestionnaireDto {
 class QuestionLogicDto {
   final int id;
   final int fromQuestionId;
-  final int triggerOptionId;
+  final int? triggerOptionId;
+  final String? triggerText;
+  final double? triggerNumber;
   final int? gotoQuestionId;
   final bool gotoEnd;
+  final String effect;
+  final int order;
 
   QuestionLogicDto({
     required this.id,
     required this.fromQuestionId,
     required this.triggerOptionId,
+    required this.triggerText,
+    required this.triggerNumber,
     required this.gotoQuestionId,
     required this.gotoEnd,
+    required this.effect,
+    required this.order,
   });
 
   factory QuestionLogicDto.fromJson(Map<String, dynamic> json) {
     return QuestionLogicDto(
       id: json['id'] as int,
       fromQuestionId: json['from_question'] as int,
-      triggerOptionId: json['trigger_option'] as int,
+      triggerOptionId: json['trigger_option'] as int?,
+      triggerText: json['trigger_text'] as String?,
+      triggerNumber: json['trigger_number'] != null
+          ? double.tryParse(json['trigger_number'].toString())
+          : null,
       gotoQuestionId: json['goto_question'] as int?,
       gotoEnd: json['goto_end'] as bool? ?? false,
+      effect: json['effect'] as String? ?? 'show',
+      order: json['order'] as int? ?? 0,
     );
   }
 }
@@ -414,6 +605,13 @@ class QuestionDto {
   final String text;
   final String type;
   final bool required;
+  final double score;
+  final int fontSize;
+  final bool visibleToEvaluator;
+  final bool visibleToAdmin;
+  final bool visibleToClient;
+  final List<int> applicableStoreIds;
+  final List<int> applicableGroupIds;
   final List<OptionDto> options;
   final List<QuestionLogicDto> outgoingLogics;
 
@@ -422,6 +620,13 @@ class QuestionDto {
     required this.text,
     required this.type,
     required this.required,
+    required this.score,
+    required this.fontSize,
+    required this.visibleToEvaluator,
+    required this.visibleToAdmin,
+    required this.visibleToClient,
+    required this.applicableStoreIds,
+    required this.applicableGroupIds,
     required this.options,
     required this.outgoingLogics,
   });
@@ -438,6 +643,17 @@ class QuestionDto {
       text: json['text'] as String? ?? '',
       type: json['type'] as String? ?? '',
       required: json['required'] as bool? ?? false,
+      score: json['score'] != null ? double.tryParse(json['score'].toString()) ?? 0 : 0,
+      fontSize: json['font_size'] as int? ?? 14,
+      visibleToEvaluator: json['visible_to_evaluator'] as bool? ?? true,
+      visibleToAdmin: json['visible_to_admin'] as bool? ?? true,
+      visibleToClient: json['visible_to_client'] as bool? ?? false,
+      applicableStoreIds: (json['applicable_store_ids'] as List<dynamic>? ?? [])
+          .map((e) => e as int)
+          .toList(),
+      applicableGroupIds: (json['applicable_group_ids'] as List<dynamic>? ?? [])
+          .map((e) => e as int)
+          .toList(),
       options: options,
       outgoingLogics: logics,
     );
@@ -450,12 +666,14 @@ class OptionDto {
   final String text;
   final String value;
   final int order;
+  final double score;
 
   OptionDto({
     required this.id,
     required this.text,
     required this.value,
     required this.order,
+    required this.score,
   });
 
   factory OptionDto.fromJson(Map<String, dynamic> json) {
@@ -464,6 +682,7 @@ class OptionDto {
       text: json['text'] as String? ?? '',
       value: json['value'] as String? ?? '',
       order: json['order'] as int? ?? 0,
+      score: json['score'] != null ? double.tryParse(json['score'].toString()) ?? 0 : 0,
     );
   }
 }
@@ -472,6 +691,11 @@ class AnswerDto {
   final int questionId;
   final String? textValue;
   final double? numberValue;
+  final String? dateValue;
+  final String? timeValue;
+  final double? locationLat;
+  final double? locationLng;
+  final String? locationAddress;
   final List<int> selectedOptionIds;
   final List<int> mediaFileIds;
 
@@ -479,6 +703,11 @@ class AnswerDto {
     required this.questionId,
     this.textValue,
     this.numberValue,
+    this.dateValue,
+    this.timeValue,
+    this.locationLat,
+    this.locationLng,
+    this.locationAddress,
     required this.selectedOptionIds,
     required this.mediaFileIds,
   });
@@ -493,6 +722,15 @@ class AnswerDto {
       numberValue: (json['number_value'] != null)
           ? double.tryParse(json['number_value'].toString())
           : null,
+      dateValue: json['date_value'] as String?,
+      timeValue: json['time_value'] as String?,
+      locationLat: json['location_lat'] != null
+          ? double.tryParse(json['location_lat'].toString())
+          : null,
+      locationLng: json['location_lng'] != null
+          ? double.tryParse(json['location_lng'].toString())
+          : null,
+      locationAddress: json['location_address'] as String?,
       selectedOptionIds: selectedIdsJson.map((e) => e as int).toList(),
       mediaFileIds: mediaIdsJson.map((e) => e as int).toList(),
     );
@@ -535,7 +773,7 @@ class SubmissionDto {
 class MediaFileDto {
   final int id;
   final String fileUrl;
-  final String mediaType; // 'image' or 'video'
+  final String mediaType; // 'image' or 'video' or 'audio'
 
   MediaFileDto({
     required this.id,
@@ -605,6 +843,11 @@ class AnswerDraft {
   final int questionId;
   String? textValue;
   double? numberValue;
+  String? dateValue;
+  String? timeValue;
+  double? locationLat;
+  double? locationLng;
+  String? locationAddress;
   List<int> selectedOptionIds;
   List<int> mediaFileIds;
 
@@ -618,6 +861,11 @@ class AnswerDraft {
     required this.questionId,
     this.textValue,
     this.numberValue,
+    this.dateValue,
+    this.timeValue,
+    this.locationLat,
+    this.locationLng,
+    this.locationAddress,
     List<int>? selectedOptionIds,
     List<int>? mediaFileIds,
     this.isUploadingMedia = false,

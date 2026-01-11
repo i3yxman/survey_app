@@ -1,6 +1,7 @@
 // lib/widgets/avoid_dates_chip.dart
 
 import 'package:flutter/material.dart';
+import '../utils/date_format.dart';
 
 class AvoidDatesChip extends StatefulWidget {
   final List<String> rawDates; // 用于 fallback
@@ -25,8 +26,10 @@ class _AvoidDatesChipState extends State<AvoidDatesChip> {
     final s = r['start'] ?? '';
     final e = r['end'] ?? '';
     if (s.isEmpty) return '';
-    if (s == e || e.isEmpty) return s;
-    return '$s–$e';
+    final sText = formatDateZh(parseDate(s));
+    if (s == e || e.isEmpty) return sText;
+    final eText = formatDateZh(parseDate(e));
+    return '$sText–$eText';
   }
 
   @override
@@ -36,7 +39,10 @@ class _AvoidDatesChipState extends State<AvoidDatesChip> {
     // 优先用 ranges；没有就用 rawDates 兜底
     final items = widget.ranges.isNotEmpty
         ? widget.ranges.map(_fmtRange).where((x) => x.isNotEmpty).toList()
-        : widget.rawDates;
+        : widget.rawDates
+            .map((d) => formatDateZh(parseDate(d)))
+            .where((x) => x.isNotEmpty && x != '-')
+            .toList();
 
     if (items.isEmpty) return const SizedBox.shrink();
 

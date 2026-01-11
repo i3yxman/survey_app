@@ -6,6 +6,9 @@ import '../../models/api_models.dart';
 import '../../utils/error_message.dart';
 import '../../utils/snackbar.dart';
 import '../../repositories/submission_repository.dart';
+import '../../widgets/info_chip.dart';
+import '../../utils/date_format.dart';
+import '../../utils/status_format.dart';
 
 class SubmissionCommentsPage extends StatefulWidget {
   final int submissionId;
@@ -140,7 +143,7 @@ class _SubmissionCommentsPageState extends State<SubmissionCommentsPage> {
               color: theme.colorScheme.surfaceContainerHighest,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Text(
-                '当前状态：${widget.status}',
+                '当前状态：${formatStatusLabel(widget.status)}',
                 style: theme.textTheme.bodySmall,
               ),
             ),
@@ -221,9 +224,9 @@ class _SubmissionCommentsPageState extends State<SubmissionCommentsPage> {
                 const SizedBox(height: 4),
                 Text(c.message, style: const TextStyle(fontSize: 14)),
                 const SizedBox(height: 2),
-                Text(
-                  _formatTime(c.createdAt),
-                  style: const TextStyle(fontSize: 10, color: Colors.black38),
+                InfoChip(
+                  icon: Icons.schedule_outlined,
+                  text: _formatTime(c.createdAt),
                 ),
               ],
             ),
@@ -294,18 +297,6 @@ class _SubmissionCommentsPageState extends State<SubmissionCommentsPage> {
   }
 
   String _formatTime(DateTime dt) {
-    // 简单格式：HH:mm 或 MM-dd HH:mm
-    final now = DateTime.now();
-    if (now.year == dt.year && now.month == dt.month && now.day == dt.day) {
-      final h = dt.hour.toString().padLeft(2, '0');
-      final m = dt.minute.toString().padLeft(2, '0');
-      return '$h:$m';
-    } else {
-      final mm = dt.month.toString().padLeft(2, '0');
-      final dd = dt.day.toString().padLeft(2, '0');
-      final h = dt.hour.toString().padLeft(2, '0');
-      final m = dt.minute.toString().padLeft(2, '0');
-      return '$mm-$dd $h:$m';
-    }
+    return formatDateTimeZh(dt);
   }
 }

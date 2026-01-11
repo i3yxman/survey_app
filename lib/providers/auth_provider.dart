@@ -20,6 +20,35 @@ class AuthProvider extends ChangeNotifier {
   LoginResult? get currentUser => _currentUser;
   bool get isLoggedIn => _currentUser != null;
 
+  String? _readString(Map<String, dynamic> data, List<String> keys) {
+    for (final key in keys) {
+      final v = data[key];
+      if (v is String && v.trim().isNotEmpty) return v;
+    }
+    return null;
+  }
+
+  LoginResult? _applyMe(LoginResult? base, Map<String, dynamic> me) {
+    if (base == null) return null;
+    final fullName = _readString(me, ['full_name', 'fullName']) ??
+        [
+          _readString(me, ['first_name']) ?? '',
+          _readString(me, ['last_name']) ?? '',
+        ].where((s) => s.isNotEmpty).join(' ');
+    return base.copyWith(
+      email: _readString(me, ['email']),
+      phone: _readString(me, ['phone', 'mobile', 'phone_number']),
+      fullName: fullName.isNotEmpty ? fullName : null,
+      gender: _readString(me, ['gender']),
+      idNumber: _readString(me, ['id_number', 'idNumber']),
+      province: _readString(me, ['province']),
+      city: _readString(me, ['city']),
+      address: _readString(me, ['address']),
+      alipayAccount: _readString(me, ['alipay_account', 'alipayAccount']),
+      notificationSettings: (me['notification_settings'] as Map?)?.cast<String, dynamic>(),
+    );
+  }
+
   void clearError() {
     if (_error != null) {
       _error = null;
@@ -32,12 +61,16 @@ class AuthProvider extends ChangeNotifier {
     String password, {
     bool rememberAccount = false,
     bool enableBiometric = false,
+    double? lastLoginLat,
+    double? lastLoginLng,
+    String? lastLoginCity,
+    String? lastLoginAddress,
   }) async {
     final u = identifier.trim();
     final p = password.trim();
 
     if (u.isEmpty || p.isEmpty) {
-      _error = '用户名和密码不能为空';
+      _error = '账号和密码不能为空';
       notifyListeners();
       return;
     }
@@ -48,7 +81,14 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final result = await _repo.login(u, p);
+      final result = await _repo.login(
+        u,
+        p,
+        lastLoginLat: lastLoginLat,
+        lastLoginLng: lastLoginLng,
+        lastLoginCity: lastLoginCity,
+        lastLoginAddress: lastLoginAddress,
+      );
 
       await _repo.setRememberAccount(rememberAccount);
       if (rememberAccount) {
@@ -67,6 +107,11 @@ class AuthProvider extends ChangeNotifier {
 
       _currentUser = result;
       _error = null;
+
+      try {
+        final me = await _repo.me();
+        _currentUser = _applyMe(_currentUser, me);
+      } catch (_) {}
 
       await PushTokenService().syncIfNeeded();
     } catch (e) {
@@ -88,6 +133,16 @@ class AuthProvider extends ChangeNotifier {
         id: (me['id'] as int?) ?? 0,
         username: (me['username'] as String?) ?? '',
         role: (me['role'] as String?) ?? '',
+        email: _readString(me, ['email']),
+        phone: _readString(me, ['phone', 'mobile', 'phone_number']),
+        fullName: _readString(me, ['full_name', 'fullName']),
+        gender: _readString(me, ['gender']),
+        idNumber: _readString(me, ['id_number', 'idNumber']),
+        province: _readString(me, ['province']),
+        city: _readString(me, ['city']),
+        address: _readString(me, ['address']),
+        alipayAccount: _readString(me, ['alipay_account', 'alipayAccount']),
+        notificationSettings: (me['notification_settings'] as Map?)?.cast<String, dynamic>(),
         status: (me['status'] as String?) ?? '',
         applicationStatus: (me['application_status'] as String?),
         token: token,
@@ -112,6 +167,15 @@ class AuthProvider extends ChangeNotifier {
 
     // 退出时会清 token，并自动关闭生物识别（见 TokenStore.clearSessionButMaybeKeepUsername）
     await _repo.logout(keepUsernameIfRemembered: true);
+  }
+
+  Future<void> refreshProfile() async {
+    if (_currentUser == null) return;
+    try {
+      final me = await _repo.me();
+      _currentUser = _applyMe(_currentUser, me);
+      notifyListeners();
+    } catch (_) {}
   }
 
   Future<void> changePassword({
@@ -141,6 +205,29 @@ class AuthProvider extends ChangeNotifier {
       _loading = false;
       notifyListeners();
     }
+  }
+
+  Future<void> updateLastLoginLocation({
+    double? lat,
+    double? lng,
+    String? city,
+    String? address,
+  }) async {
+    try {
+      final payload = <String, dynamic>{};
+      if (lat != null) payload['last_login_lat'] = lat;
+      if (lng != null) payload['last_login_lng'] = lng;
+      if (city != null && city.trim().isNotEmpty) {
+        payload['last_login_city'] = city.trim();
+      }
+      if (address != null && address.trim().isNotEmpty) {
+        payload['last_login_address'] = address.trim();
+      }
+      if (payload.isEmpty) return;
+      final me = await _repo.updateProfile(payload);
+      _currentUser = _applyMe(_currentUser, me);
+      notifyListeners();
+    } catch (_) {}
   }
 
   Future<String> requestPasswordReset(String identifier) {
@@ -176,6 +263,25 @@ class AuthProvider extends ChangeNotifier {
       }
     } else {
       await _repo.clearBiometricUsername();
+    }
+  }
+
+  Future<void> updateProfile(Map<String, dynamic> payload) async {
+    if (_loading) return;
+    _loading = true;
+    _error = null;
+    notifyListeners();
+    try {
+      final data = await _repo.updateProfile(payload);
+      if (_currentUser != null) {
+        _currentUser = _applyMe(_currentUser, data);
+      }
+      _error = null;
+    } catch (e) {
+      _error = userMessageFrom(e, fallback: '更新资料失败，请稍后重试');
+    } finally {
+      _loading = false;
+      notifyListeners();
     }
   }
 }

@@ -47,6 +47,25 @@ String? formatStoreDistance(
   }
 }
 
+double? calcDistanceKm(
+  Position? currentPosition,
+  double? storeLat,
+  double? storeLng,
+) {
+  if (currentPosition == null || storeLat == null || storeLng == null) {
+    return null;
+  }
+
+  final d = Geolocator.distanceBetween(
+    currentPosition.latitude,
+    currentPosition.longitude,
+    storeLat,
+    storeLng,
+  );
+
+  return d / 1000.0;
+}
+
 Future<String?> reverseGeocodeCity(double lat, double lng) async {
   final placemarks = await placemarkFromCoordinates(lat, lng);
   if (placemarks.isEmpty) return null;

@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 final DateFormat _ymd = DateFormat('yyyy-MM-dd');
 final DateFormat _ymdHm = DateFormat('yyyy-MM-dd HH:mm');
+final DateFormat _ymdHmZh = DateFormat('yyyy年MM月dd日 HH:mm');
 
 String formatDate(DateTime? dt) {
   if (dt == null) return '-';
@@ -18,6 +19,11 @@ String formatDateZh(DateTime? dt) {
 String formatDateTime(DateTime? dt) {
   if (dt == null) return '-';
   return _ymdHm.format(dt.toLocal());
+}
+
+String formatDateTimeZh(DateTime? dt) {
+  if (dt == null) return '-';
+  return _ymdHmZh.format(dt.toLocal());
 }
 
 DateTime? parseDate(String? s) {

@@ -12,8 +12,22 @@ class AuthRepository {
       _store = store ?? TokenStore();
 
   // ---------- login / me ----------
-  Future<LoginResult> login(String identifier, String password) async {
-    final res = await _api.login(identifier, password);
+  Future<LoginResult> login(
+    String identifier,
+    String password, {
+    double? lastLoginLat,
+    double? lastLoginLng,
+    String? lastLoginCity,
+    String? lastLoginAddress,
+  }) async {
+    final res = await _api.login(
+      identifier,
+      password,
+      lastLoginLat: lastLoginLat,
+      lastLoginLng: lastLoginLng,
+      lastLoginCity: lastLoginCity,
+      lastLoginAddress: lastLoginAddress,
+    );
     await _store.saveToken(res.token);
     return res;
   }
@@ -72,4 +86,7 @@ class AuthRepository {
 
   Future<String> requestPasswordReset({required String identifier}) =>
       _api.requestPasswordReset(identifier: identifier);
+
+  Future<Map<String, dynamic>> updateProfile(Map<String, dynamic> payload) =>
+      _api.updateProfile(payload);
 }

@@ -18,6 +18,11 @@ class InfoChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
+    final chipTextStyle = theme.textTheme.labelSmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.85),
+      fontWeight: FontWeight.w500,
+    );
+
     final child = Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -32,14 +37,18 @@ class InfoChip extends StatelessWidget {
         mainAxisSize: MainAxisSize.max,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Icon(icon, size: 14, color: theme.colorScheme.primary),
+          Icon(
+            icon,
+            size: 14,
+            color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.85),
+          ),
           const SizedBox(width: 4),
 
           // ✅ 关键：用 Expanded 让文本拿到剩余宽度，自动换行/截断都不会炸
           Expanded(
             child: Text(
               text,
-              style: theme.textTheme.bodySmall,
+              style: chipTextStyle,
               maxLines: 2, // 你想一行就改成 1
               overflow: TextOverflow.ellipsis, // 不会溢出
               softWrap: true,

@@ -20,9 +20,39 @@ class AppTheme {
       surface: Colors.white,
     );
 
+    final textTheme = base.textTheme.copyWith(
+      titleLarge: base.textTheme.titleLarge?.copyWith(
+        fontWeight: FontWeight.w700,
+        letterSpacing: -0.3,
+      ),
+      titleMedium: base.textTheme.titleMedium?.copyWith(
+        fontWeight: FontWeight.w600,
+        letterSpacing: -0.2,
+      ),
+      titleSmall: base.textTheme.titleSmall?.copyWith(
+        fontWeight: FontWeight.w600,
+        letterSpacing: -0.1,
+      ),
+      bodyMedium: base.textTheme.bodyMedium?.copyWith(
+        fontSize: 15,
+        letterSpacing: -0.1,
+      ),
+      bodySmall: base.textTheme.bodySmall?.copyWith(
+        fontSize: 12,
+      ),
+      labelLarge: base.textTheme.labelLarge?.copyWith(
+        fontWeight: FontWeight.w600,
+      ),
+      labelSmall: base.textTheme.labelSmall?.copyWith(
+        fontSize: 11,
+      ),
+    );
+
     return base.copyWith(
       colorScheme: scheme,
       scaffoldBackgroundColor: _backgroundLight,
+      textTheme: textTheme,
+      iconTheme: IconThemeData(color: scheme.onSurface),
 
       // 顶部导航条：白底、居中标题、17 号字
       appBarTheme: AppBarTheme(
@@ -30,11 +60,8 @@ class AppTheme {
         foregroundColor: Colors.black,
         elevation: 0,
         centerTitle: true,
-        titleTextStyle: base.textTheme.titleMedium?.copyWith(
-          fontWeight: FontWeight.w600,
-          fontSize: 17,
-          letterSpacing: -0.2,
-        ),
+        titleTextStyle: textTheme.titleMedium?.copyWith(fontSize: 17),
+        surfaceTintColor: Colors.transparent,
       ),
 
       // 卡片：大圆角 + 无阴影，类似 iOS 列表卡片
@@ -42,7 +69,19 @@ class AppTheme {
         color: scheme.surface,
         elevation: 0,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shadowColor: Colors.black.withValues(alpha: 0.04),
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      ),
+      listTileTheme: ListTileThemeData(
+        iconColor: scheme.onSurfaceVariant,
+        textColor: scheme.onSurface,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      ),
+      chipTheme: ChipThemeData(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+        side: BorderSide(color: scheme.outlineVariant),
+        labelStyle: textTheme.labelSmall,
       ),
 
       // Filled 主按钮：系统蓝 + 大圆角
@@ -54,10 +93,7 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
-          textStyle: base.textTheme.labelLarge?.copyWith(
-            fontWeight: FontWeight.w600,
-            letterSpacing: 0,
-          ),
+          textStyle: textTheme.labelLarge?.copyWith(letterSpacing: 0),
         ),
       ),
 
@@ -68,7 +104,7 @@ class AppTheme {
             borderRadius: BorderRadius.circular(14),
           ),
           side: BorderSide(color: scheme.outlineVariant),
-          textStyle: base.textTheme.labelLarge,
+          textStyle: textTheme.labelLarge,
         ),
       ),
 
@@ -76,9 +112,7 @@ class AppTheme {
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: _primaryBlue,
-          textStyle: base.textTheme.labelLarge?.copyWith(
-            fontWeight: FontWeight.w500,
-          ),
+          textStyle: textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w500),
         ),
       ),
 
@@ -94,7 +128,7 @@ class AppTheme {
           horizontal: 14,
           vertical: 10,
         ),
-        labelStyle: base.textTheme.bodyMedium?.copyWith(
+        labelStyle: textTheme.bodyMedium?.copyWith(
           color: Colors.grey[700],
         ),
       ),
@@ -105,11 +139,13 @@ class AppTheme {
         backgroundColor: _backgroundLight,
         selectedItemColor: _primaryBlue,
         unselectedItemColor: Colors.grey[500],
-        selectedLabelStyle: base.textTheme.labelSmall?.copyWith(
+        selectedLabelStyle: textTheme.labelSmall?.copyWith(
           fontWeight: FontWeight.w600,
         ),
-        unselectedLabelStyle: base.textTheme.labelSmall,
+        unselectedLabelStyle: textTheme.labelSmall,
         showUnselectedLabels: true,
+        selectedIconTheme: const IconThemeData(size: 22),
+        unselectedIconTheme: const IconThemeData(size: 20),
       ),
 
       // Tab 样式（如果你后面用到）
@@ -121,6 +157,14 @@ class AppTheme {
 
       // 分割线更细一点
       dividerTheme: const DividerThemeData(space: 1, thickness: 0.5),
+      snackBarTheme: SnackBarThemeData(
+        backgroundColor: scheme.surfaceContainerHighest,
+        contentTextStyle: textTheme.bodySmall?.copyWith(
+          color: scheme.onSurface,
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        behavior: SnackBarBehavior.floating,
+      ),
     );
   }
 
@@ -136,27 +180,60 @@ class AppTheme {
       surface: const Color(0xFF1C1C1E), // iOS 深色卡片
     );
 
+    final textTheme = base.textTheme.copyWith(
+      titleLarge: base.textTheme.titleLarge?.copyWith(
+        fontWeight: FontWeight.w700,
+        letterSpacing: -0.3,
+      ),
+      titleMedium: base.textTheme.titleMedium?.copyWith(
+        fontWeight: FontWeight.w600,
+        letterSpacing: -0.2,
+      ),
+      titleSmall: base.textTheme.titleSmall?.copyWith(
+        fontWeight: FontWeight.w600,
+        letterSpacing: -0.1,
+      ),
+      bodyMedium: base.textTheme.bodyMedium?.copyWith(
+        fontSize: 15,
+        letterSpacing: -0.1,
+      ),
+      bodySmall: base.textTheme.bodySmall?.copyWith(fontSize: 12),
+      labelLarge: base.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
+      labelSmall: base.textTheme.labelSmall?.copyWith(fontSize: 11),
+    );
+
     return base.copyWith(
       colorScheme: scheme,
       scaffoldBackgroundColor: scheme.surface,
+      textTheme: textTheme,
+      iconTheme: IconThemeData(color: scheme.onSurface),
 
       appBarTheme: AppBarTheme(
         backgroundColor: scheme.surface,
         foregroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
-        titleTextStyle: base.textTheme.titleMedium?.copyWith(
-          fontWeight: FontWeight.w600,
-          fontSize: 17,
-          letterSpacing: -0.2,
-        ),
+        titleTextStyle: textTheme.titleMedium?.copyWith(fontSize: 17),
+        surfaceTintColor: Colors.transparent,
       ),
 
       cardTheme: CardThemeData(
         color: scheme.surface,
         elevation: 0,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shadowColor: Colors.black.withValues(alpha: 0.2),
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      ),
+      listTileTheme: ListTileThemeData(
+        iconColor: scheme.onSurfaceVariant,
+        textColor: scheme.onSurface,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      ),
+      chipTheme: ChipThemeData(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+        side: BorderSide(color: scheme.outlineVariant),
+        labelStyle: textTheme.labelSmall,
       ),
 
       elevatedButtonTheme: ElevatedButtonThemeData(
@@ -167,9 +244,7 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
-          textStyle: base.textTheme.labelLarge?.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
+          textStyle: textTheme.labelLarge,
         ),
       ),
 
@@ -179,12 +254,15 @@ class AppTheme {
             borderRadius: BorderRadius.circular(14),
           ),
           side: BorderSide(color: scheme.outlineVariant),
-          textStyle: base.textTheme.labelLarge,
+          textStyle: textTheme.labelLarge,
         ),
       ),
 
       textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(foregroundColor: _primaryBlue),
+        style: TextButton.styleFrom(
+          foregroundColor: _primaryBlue,
+          textStyle: textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w500),
+        ),
       ),
 
       inputDecorationTheme: InputDecorationTheme(
@@ -205,14 +283,24 @@ class AppTheme {
         backgroundColor: scheme.surface,
         selectedItemColor: _primaryBlue,
         unselectedItemColor: Colors.grey[500],
-        selectedLabelStyle: base.textTheme.labelSmall?.copyWith(
+        selectedLabelStyle: textTheme.labelSmall?.copyWith(
           fontWeight: FontWeight.w600,
         ),
-        unselectedLabelStyle: base.textTheme.labelSmall,
+        unselectedLabelStyle: textTheme.labelSmall,
         showUnselectedLabels: true,
+        selectedIconTheme: const IconThemeData(size: 22),
+        unselectedIconTheme: const IconThemeData(size: 20),
       ),
 
       dividerTheme: const DividerThemeData(space: 1, thickness: 0.5),
+      snackBarTheme: SnackBarThemeData(
+        backgroundColor: scheme.surfaceContainerHighest,
+        contentTextStyle: textTheme.bodySmall?.copyWith(
+          color: scheme.onSurface,
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        behavior: SnackBarBehavior.floating,
+      ),
     );
   }
 }

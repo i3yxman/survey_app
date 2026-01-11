@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:local_auth/local_auth.dart';
 
 import '../../providers/auth_provider.dart';
+import '../../providers/location_provider.dart';
 import '../../services/push_token_service.dart';
 import '../../widgets/glass_card.dart';
 import '../../widgets/app_logo_header.dart';
@@ -86,6 +87,17 @@ class _SplashPageState extends State<SplashPage> {
 
     // 3) 恢复登录态
     await auth.bootstrap();
+
+    if (auth.currentUser != null) {
+      final loc = context.read<LocationProvider>();
+      await loc.ensureLocation();
+      await auth.updateLastLoginLocation(
+        lat: loc.position?.latitude,
+        lng: loc.position?.longitude,
+        city: loc.city,
+        address: loc.address,
+      );
+    }
 
     await Future.delayed(const Duration(milliseconds: 600));
     if (!mounted) return;

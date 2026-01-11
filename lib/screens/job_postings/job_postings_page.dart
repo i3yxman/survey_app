@@ -7,12 +7,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../models/api_models.dart';
 import '../../providers/job_postings_provider.dart';
 import '../../providers/location_provider.dart';
-import '../../services/api_service.dart';
+import '../../repositories/region_repository.dart';
 import '../../widgets/info_chip.dart';
 import '../../widgets/avoid_dates_chip.dart';
 import '../../utils/location_utils.dart';
-import '../../utils/snackbar.dart';
 import '../../utils/date_format.dart';
+import '../../utils/currency_format.dart';
 import '../../main.dart';
 import '../../utils/map_selector.dart';
 
@@ -24,17 +24,32 @@ class JobPostingsPage extends StatefulWidget {
 }
 
 class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
-  static const _kPrefCityMode = 'job_postings_city_mode'; // 'auto' | 'manual'
+  static const _kPrefCityMode =
+      'job_postings_city_mode'; // 'auto' | 'manual' | 'all'
   static const _kPrefManualCity = 'job_postings_manual_city';
+  static const _kPrefManualProvince = 'job_postings_manual_province';
+  static const _kPrefDistanceKm = 'job_postings_distance_km';
+  static const _kPrefOnlyTaskCities = 'job_postings_only_task_cities';
+  static const _kPrefSortBy = 'job_postings_sort_by'; // 'default' | 'distance' | 'reward'
 
   String _cityMode = 'auto';
   String? _manualCity;
+  String? _manualProvince;
+  double? _maxDistanceKm;
+  bool _onlyTaskCities = false;
+  String _sortBy = 'default';
+  bool _distanceUnlimited = false;
+
+  final RegionRepository _regionRepo = RegionRepository();
+  List<Map<String, dynamic>> _regions = [];
+  bool _regionsLoading = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _loadCityPref();
+      await _loadRegions();
       await context.read<LocationProvider>().ensureLocation();
       await context.read<JobPostingsProvider>().loadJobPostings();
       if (mounted) setState(() {});
@@ -51,6 +66,7 @@ class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
   @override
   void didPopNext() async {
     await _loadCityPref();
+    await _loadRegions();
     await context.read<LocationProvider>().ensureLocation();
     await context.read<JobPostingsProvider>().loadJobPostings();
     if (mounted) setState(() {});
@@ -64,6 +80,7 @@ class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
 
   Future<void> _refresh() async {
     await _loadCityPref();
+    await _loadRegions();
     await context.read<LocationProvider>().ensureLocation();
     await context.read<JobPostingsProvider>().loadJobPostings();
     if (mounted) setState(() {});
@@ -73,26 +90,97 @@ class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
     final sp = await SharedPreferences.getInstance();
     final mode = sp.getString(_kPrefCityMode) ?? 'auto';
     final manual = sp.getString(_kPrefManualCity);
+    final manualProvince = sp.getString(_kPrefManualProvince);
+    final distance = sp.getDouble(_kPrefDistanceKm);
+    final onlyTasks = sp.getBool(_kPrefOnlyTaskCities) ?? true;
+    final sortBy = sp.getString(_kPrefSortBy) ?? 'default';
     _cityMode = (mode == 'manual' && (manual == null || manual.trim().isEmpty))
         ? 'auto'
         : mode;
     _manualCity = (manual != null && manual.trim().isNotEmpty)
         ? manual.trim()
         : null;
+    _manualProvince = (manualProvince != null && manualProvince.trim().isNotEmpty)
+        ? manualProvince.trim()
+        : null;
+    if (distance == null) {
+      _maxDistanceKm = 100.0;
+      _distanceUnlimited = false;
+    } else if (distance <= 0) {
+      _maxDistanceKm = null;
+      _distanceUnlimited = true;
+    } else {
+      _maxDistanceKm = distance;
+      _distanceUnlimited = false;
+    }
+    _onlyTaskCities = onlyTasks;
+    _sortBy = sortBy;
   }
 
-  Future<void> _saveCityPref({required String mode, String? manualCity}) async {
+  Future<void> _saveCityPref({
+    required String mode,
+    String? manualCity,
+    String? manualProvince,
+  }) async {
     final sp = await SharedPreferences.getInstance();
     await sp.setString(_kPrefCityMode, mode);
     if (manualCity == null || manualCity.trim().isEmpty) {
       await sp.remove(_kPrefManualCity);
+      await sp.remove(_kPrefManualProvince);
     } else {
       await sp.setString(_kPrefManualCity, manualCity.trim());
+      if (manualProvince != null && manualProvince.trim().isNotEmpty) {
+        await sp.setString(_kPrefManualProvince, manualProvince.trim());
+      } else {
+        await sp.remove(_kPrefManualProvince);
+      }
     }
     _cityMode = mode;
     _manualCity = (manualCity == null || manualCity.trim().isEmpty)
         ? null
         : manualCity.trim();
+    _manualProvince = (manualProvince == null || manualProvince.trim().isEmpty)
+        ? null
+        : manualProvince.trim();
+  }
+
+  Future<void> _saveFilterPref({
+    double? maxDistanceKm,
+    bool? onlyTaskCities,
+  }) async {
+    final sp = await SharedPreferences.getInstance();
+    if (maxDistanceKm == null || maxDistanceKm <= 0) {
+      await sp.setDouble(_kPrefDistanceKm, 0);
+      _maxDistanceKm = null;
+      _distanceUnlimited = true;
+    } else {
+      await sp.setDouble(_kPrefDistanceKm, maxDistanceKm);
+      _maxDistanceKm = maxDistanceKm;
+      _distanceUnlimited = false;
+    }
+    if (onlyTaskCities != null) {
+      await sp.setBool(_kPrefOnlyTaskCities, onlyTaskCities);
+      _onlyTaskCities = onlyTaskCities;
+    }
+  }
+
+  Future<void> _saveSortPref(String sortBy) async {
+    final sp = await SharedPreferences.getInstance();
+    await sp.setString(_kPrefSortBy, sortBy);
+    _sortBy = sortBy;
+  }
+
+  Future<void> _loadRegions() async {
+    if (_regionsLoading || _regions.isNotEmpty) return;
+    _regionsLoading = true;
+    try {
+      final list = await _regionRepo.fetchRegions();
+      if (list.isNotEmpty) _regions = list;
+    } catch (_) {
+      // ignore
+    } finally {
+      _regionsLoading = false;
+    }
   }
 
   /// 从地址里粗略提取 “xx市”
@@ -114,6 +202,7 @@ class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
 
   /// 当前应该用哪个城市过滤（auto/manual）
   String? _effectiveCity(LocationProvider loc) {
+    if (_cityMode == 'all') return null;
     if (_cityMode == 'manual') return _manualCity;
     final c = (loc.city ?? '').trim();
     return c.isEmpty ? null : c;
@@ -128,191 +217,495 @@ class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
     return formatStoreDistance(loc.position, storeLat, storeLng);
   }
 
-  Future<void> _handleApply(JobPosting p) async {
-    final provider = context.read<JobPostingsProvider>();
-
-    final now = DateTime.now();
-    final todayDate = DateTime(now.year, now.month, now.day);
-
-    if (p.projectStartDate == null || p.projectEndDate == null) {
-      if (!mounted) return;
-      showErrorSnackBar(context, '该任务所属项目未设置开始/结束日期，暂不可申请');
-      return;
-    }
-
-    final projectStart = DateTime.parse(p.projectStartDate!);
-    final projectEnd = DateTime.parse(p.projectEndDate!);
-    final projectStartDate = DateTime(
-      projectStart.year,
-      projectStart.month,
-      projectStart.day,
-    );
-    final projectEndDate = DateTime(
-      projectEnd.year,
-      projectEnd.month,
-      projectEnd.day,
+  Future<void> _openDetail(JobPosting p) async {
+    final needRefresh = await Navigator.pushNamed(
+      context,
+      '/job-posting-detail',
+      arguments: p,
     );
 
-    final first = todayDate.isAfter(projectStartDate)
-        ? todayDate
-        : projectStartDate;
-    final last = projectEndDate;
-
-    if (first.isAfter(last)) {
-      if (!mounted) return;
-      showErrorSnackBar(context, '项目周期已结束，无法申请');
-      return;
-    }
-
-    final avoidDates = p.avoidVisitDates
-        .map((e) => DateTime.parse(e))
-        .map((d) => DateTime(d.year, d.month, d.day))
-        .toSet();
-
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: first,
-      firstDate: first,
-      lastDate: last,
-      locale: const Locale('zh', 'CN'),
-      selectableDayPredicate: (day) {
-        final d = DateTime(day.year, day.month, day.day);
-        return !avoidDates.contains(d);
-      },
-    );
-
-    if (picked == null) return;
-
-    if (picked.isBefore(todayDate)) {
-      if (!mounted) return;
-      showErrorSnackBar(context, '无法选择过去的日期');
-      return;
-    }
-
-    try {
-      await provider.apply(p.id, plannedVisitDate: picked);
-      if (!mounted) return;
-      showSuccessSnackBar(context, '申请已提交，计划走访日期：${formatDateZh(picked)}');
+    if (needRefresh == true) {
       await _refresh();
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      showErrorSnackBar(context, e, fallback: '申请失败，请稍后重试');
-    }
-  }
-
-  Future<void> _handleCancelApply(JobPosting p) async {
-    final provider = context.read<JobPostingsProvider>();
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          title: const Text('确认撤销申请'),
-          content: const Text('确定要撤销该任务的申请吗？'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('取消'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('撤销申请'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (confirmed != true) return;
-
-    try {
-      await provider.cancelApply(p.id);
-      if (!mounted) return;
-      showSuccessSnackBar(context, '申请已撤回');
-      await _refresh();
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      showErrorSnackBar(context, e, fallback: '撤销失败，请稍后重试');
-    } catch (e) {
-      if (!mounted) return;
-      showErrorSnackBar(context, e, fallback: '撤销失败，请稍后再试');
     }
   }
 
   Widget _buildTrailing(JobPosting p, {required bool loading}) {
-    final isPostingOpen = p.status == 'open';
-    final appStatus = p.applicationStatus;
-    final theme = Theme.of(context);
+    const double trailingWidth = 136;
 
-    const double trailingWidth = 120;
-
-    if (!isPostingOpen) {
-      return SizedBox(
-        width: trailingWidth,
-        child: Center(
-          child: Text(
-            '已关闭',
-            style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey),
-          ),
-        ),
-      );
-    }
-
-    if (appStatus == 'applied') {
-      return SizedBox(
-        width: trailingWidth,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Text(
-              '已申请',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.secondary,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            if (p.plannedVisitDate != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Text(
-                  '计划走访日期：\n${formatDateZh(DateTime.parse(p.plannedVisitDate!))}',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.secondary,
-                  ),
-                ),
-              ),
-            const SizedBox(height: 6),
-            OutlinedButton(
-              onPressed: loading ? null : () => _handleCancelApply(p),
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size(0, 32),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 4,
-                ),
-                side: BorderSide(color: theme.colorScheme.error),
-                foregroundColor: theme.colorScheme.error,
-              ),
-              child: const Text('撤销申请'),
-            ),
-          ],
-        ),
-      );
-    }
+    final statusLabel = (p.status == 'open' || p.status == 'pending')
+        ? ((p.applicationStatus == 'applied' ||
+                p.applicationStatus == 'approved')
+            ? '已申请'
+            : '待申请')
+        : '已关闭';
+    final plannedVisitText = (p.applicationStatus == 'applied' &&
+            p.plannedVisitDate != null)
+        ? '计划走访日期：${formatDateZh(DateTime.parse(p.plannedVisitDate!))}'
+        : null;
 
     return SizedBox(
       width: trailingWidth,
-      child: Center(
-        child: ElevatedButton(
-          onPressed: loading ? null : () => _handleApply(p),
-          style: ElevatedButton.styleFrom(
-            minimumSize: const Size(0, 32),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: loading ? null : () => _openDetail(p),
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size(0, 32),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              ),
+              child: const Text('查看详情'),
+            ),
           ),
-          child: const Text('申请任务'),
-        ),
+          const SizedBox(height: 6),
+          InfoChip(
+            icon: Icons.info_outline,
+            text: statusLabel,
+          ),
+          if (plannedVisitText != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: InfoChip(
+                icon: Icons.event_outlined,
+                text: plannedVisitText,
+              ),
+            ),
+        ],
       ),
+    );
+  }
+
+  String _formatLocationTitle(LocationProvider loc) {
+    if (_cityMode == 'all') return '全部城市';
+    if (_cityMode == 'manual') {
+      if (_manualProvince != null && _manualCity != null) {
+        return '$_manualProvince · $_manualCity';
+      }
+      return _manualCity ?? '手动选择';
+    }
+    final autoCity = (loc.city ?? '').trim();
+    return autoCity.isEmpty ? '自动定位' : '自动定位（$autoCity）';
+  }
+
+  List<String> _taskCities(List<JobPosting> allItems) {
+    final citySet = <String>{};
+    for (final p in allItems) {
+      final c = _guessCityFromAddress(p.storeAddress);
+      if (c != null && c.trim().isNotEmpty) citySet.add(c.trim());
+    }
+    final list = citySet.toList()..sort();
+    return list;
+  }
+
+  Future<void> _openLocationSheet({
+    required LocationProvider loc,
+    required List<JobPosting> allItems,
+  }) async {
+    final taskCities = _taskCities(allItems).toSet();
+    final regionList = _regions;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).cardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (context) {
+        String mode = _cityMode;
+        String? manualCity = _manualCity;
+        String? manualProvince = _manualProvince;
+        double? maxDistance = _maxDistanceKm;
+        double sliderValue =
+            _distanceUnlimited ? 0.0 : (_maxDistanceKm ?? 100.0);
+        String sortBy = _sortBy;
+        bool onlyTaskCities = _onlyTaskCities;
+        String cityQuery = '';
+        final distanceCtrl = TextEditingController(
+          text: sliderValue <= 0 ? '' : sliderValue.toStringAsFixed(0),
+        );
+
+        List<Map<String, dynamic>> filteredRegions() {
+          if (onlyTaskCities && taskCities.isNotEmpty) {
+            return regionList
+                .map((r) {
+                  final name = r['name']?.toString() ?? '';
+                  final cities = (r['cities'] as List?)
+                          ?.map((e) => e.toString())
+                          .where((c) => taskCities.contains(c))
+                          .toList() ??
+                      <String>[];
+                  return {'name': name, 'cities': cities};
+                })
+                .where((r) => (r['cities'] as List).isNotEmpty)
+                .toList();
+          }
+          return regionList;
+        }
+
+        void selectCity(String province, String city, void Function(VoidCallback) setSheetState) {
+          setSheetState(() {
+            mode = 'manual';
+            manualProvince = province;
+            manualCity = city;
+          });
+        }
+
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final theme = Theme.of(context);
+            final regions = filteredRegions();
+            final manualLabel = (manualProvince != null && manualCity != null)
+                ? '$manualProvince · $manualCity'
+                : (manualCity ?? '未选择');
+
+            final filtered = cityQuery.trim().isEmpty
+                ? regions
+                : regions
+                    .map((r) {
+                      final name = r['name']?.toString() ?? '';
+                      final cities = (r['cities'] as List?)
+                              ?.map((e) => e.toString())
+                              .where((c) =>
+                                  c.contains(cityQuery.trim()) ||
+                                  name.contains(cityQuery.trim()))
+                              .toList() ??
+                          <String>[];
+                      return {'name': name, 'cities': cities};
+                    })
+                    .where((r) => (r['cities'] as List).isNotEmpty)
+                    .toList();
+
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: 16,
+                  right: 16,
+                  top: 12,
+                  bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+                ),
+                child: SizedBox(
+                  height: MediaQuery.of(context).size.height * 0.7,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.place_outlined),
+                          const SizedBox(width: 8),
+                          const Text('选择城市', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                          const Spacer(),
+                          TextButton(
+                            onPressed: () {
+                              setSheetState(() {
+                                mode = 'all';
+                                manualCity = null;
+                                manualProvince = null;
+                              });
+                            },
+                            child: const Text('全部城市'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          ChoiceChip(
+                            label: Text(
+                              (loc.city ?? '').trim().isEmpty
+                                  ? '自动定位'
+                                  : '自动定位（${loc.city}）',
+                            ),
+                            selected: mode == 'auto',
+                            onSelected: (_) {
+                              setSheetState(() {
+                                mode = 'auto';
+                              });
+                            },
+                          ),
+                          ChoiceChip(
+                            label: Text('手动选择（$manualLabel）'),
+                            selected: mode == 'manual',
+                            onSelected: (_) {
+                              setSheetState(() {
+                                mode = 'manual';
+                              });
+                            },
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              '只显示有任务的城市',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Switch(
+                            value: onlyTaskCities,
+                            onChanged: (v) {
+                              setSheetState(() => onlyTaskCities = v);
+                            },
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('距离筛选'),
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: [
+                              _distanceChip('不限', null, maxDistance, (next) {
+                                setSheetState(() {
+                                  maxDistance = next;
+                                  sliderValue = 0.0;
+                                  distanceCtrl.text = '';
+                                });
+                              }),
+                              _distanceChip('1km', 1, maxDistance, (next) {
+                                setSheetState(() {
+                                  maxDistance = next;
+                                  sliderValue = 1.0;
+                                  distanceCtrl.text = '1';
+                                });
+                              }),
+                              _distanceChip('3km', 3, maxDistance, (next) {
+                                setSheetState(() {
+                                  maxDistance = next;
+                                  sliderValue = 3.0;
+                                  distanceCtrl.text = '3';
+                                });
+                              }),
+                              _distanceChip('5km', 5, maxDistance, (next) {
+                                setSheetState(() {
+                                  maxDistance = next;
+                                  sliderValue = 5.0;
+                                  distanceCtrl.text = '5';
+                                });
+                              }),
+                              _distanceChip('10km', 10, maxDistance, (next) {
+                                setSheetState(() {
+                                  maxDistance = next;
+                                  sliderValue = 10.0;
+                                  distanceCtrl.text = '10';
+                                });
+                              }),
+                              _distanceChip('20km', 20, maxDistance, (next) {
+                                setSheetState(() {
+                                  maxDistance = next;
+                                  sliderValue = 20.0;
+                                  distanceCtrl.text = '20';
+                                });
+                              }),
+                            ],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        sliderValue <= 0
+                            ? '自定义距离：不限'
+                            : '自定义距离：${sliderValue.toStringAsFixed(0)} km',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                      Slider(
+                        value: sliderValue,
+                        min: 0,
+                        max: 300,
+                        divisions: 300,
+                        label: sliderValue <= 0
+                            ? '不限'
+                            : '${sliderValue.toStringAsFixed(0)} km',
+                        onChanged: (v) {
+                          setSheetState(() {
+                            sliderValue = v;
+                            if (v <= 0) {
+                              maxDistance = null;
+                              distanceCtrl.text = '';
+                            } else {
+                              maxDistance = v;
+                              distanceCtrl.text = v.toStringAsFixed(0);
+                            }
+                          });
+                        },
+                      ),
+                      TextField(
+                        controller: distanceCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          hintText: '输入自定义距离（km）',
+                          prefixIcon: Icon(Icons.tune),
+                        ),
+                        onChanged: (v) {
+                          final parsed = double.tryParse(v);
+                          setSheetState(() {
+                            if (parsed == null || parsed <= 0) {
+                              sliderValue = 0;
+                              maxDistance = null;
+                            } else {
+                              sliderValue = parsed.clamp(0, 300);
+                              maxDistance = sliderValue;
+                            }
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          const Text('排序'),
+                          const Spacer(),
+                          Wrap(
+                            spacing: 6,
+                            children: [
+                              ChoiceChip(
+                                label: const Text('默认'),
+                                selected: sortBy == 'default',
+                                onSelected: (_) {
+                                  setSheetState(() => sortBy = 'default');
+                                },
+                              ),
+                              ChoiceChip(
+                                label: const Text('距离最近'),
+                                selected: sortBy == 'distance',
+                                onSelected: (_) {
+                                  setSheetState(() => sortBy = 'distance');
+                                },
+                              ),
+                              ChoiceChip(
+                                label: const Text('报酬最高'),
+                                selected: sortBy == 'reward',
+                                onSelected: (_) {
+                                  setSheetState(() => sortBy = 'reward');
+                                },
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        decoration: const InputDecoration(
+                          hintText: '搜索城市或省份',
+                          prefixIcon: Icon(Icons.search),
+                        ),
+                        onChanged: (v) {
+                          setSheetState(() => cityQuery = v);
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      Expanded(
+                        child: filtered.isEmpty
+                            ? Center(
+                                child: Text(
+                                  regionList.isEmpty
+                                      ? '城市数据加载中...'
+                                      : (onlyTaskCities
+                                          ? '当前没有可申请任务的城市'
+                                          : '暂无匹配城市'),
+                                ),
+                              )
+                            : ListView.builder(
+                                itemCount: filtered.length,
+                                itemBuilder: (context, index) {
+                                  final region = filtered[index];
+                                  final name = region['name']?.toString() ?? '';
+                                  final cities = (region['cities'] as List?)
+                                          ?.map((e) => e.toString())
+                                          .toList() ??
+                                      <String>[];
+                                  if (name.isEmpty || cities.isEmpty) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  return Theme(
+                                    data: theme.copyWith(dividerColor: Colors.transparent),
+                                    child: ExpansionTile(
+                                      initiallyExpanded: manualProvince == name && cityQuery.trim().isEmpty,
+                                      title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                                      children: cities.map((city) {
+                                        final selected = manualCity == city && manualProvince == name;
+                                        return ListTile(
+                                          title: Text(city),
+                                          trailing: selected
+                                              ? Icon(Icons.check, color: theme.colorScheme.primary)
+                                              : null,
+                                          onTap: () => selectCity(name, city, setSheetState),
+                                        );
+                                      }).toList(),
+                                    ),
+                                  );
+                                },
+                              ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('取消'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () async {
+                                await _saveCityPref(
+                                  mode: mode,
+                                  manualCity: manualCity,
+                                  manualProvince: manualProvince,
+                                );
+                                await _saveFilterPref(
+                                  maxDistanceKm: maxDistance,
+                                  onlyTaskCities: onlyTaskCities,
+                                );
+                                await _saveSortPref(sortBy);
+                                if (mounted) setState(() {});
+                                if (context.mounted) Navigator.pop(context);
+                                await _refresh();
+                              },
+                              child: const Text('应用'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _distanceChip(
+    String label,
+    double? value,
+    double? selected,
+    void Function(double? next) onSelect,
+  ) {
+    final isSelected = (value == null && selected == null) ||
+        (value != null && selected != null && value == selected);
+    return ChoiceChip(
+      label: Text(label),
+      selected: isSelected,
+      onSelected: (_) {
+        if (value == null) {
+          onSelect(null);
+        } else {
+          onSelect(value);
+        }
+      },
     );
   }
 
@@ -320,67 +713,25 @@ class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
     required LocationProvider loc,
     required List<JobPosting> allItems,
   }) {
-    final autoCity = (loc.city ?? '').trim();
-
-    final citySet = <String>{};
-    for (final p in allItems) {
-      final c = _guessCityFromAddress(p.storeAddress);
-      if (c != null && c.trim().isNotEmpty) citySet.add(c.trim());
-    }
-    final cities = citySet.toList()..sort();
-
-    String value;
-    if (_cityMode == 'manual' && _manualCity != null) {
-      value = 'manual:${_manualCity!}';
-    } else {
-      value = 'auto';
-    }
-
-    final items = <DropdownMenuItem<String>>[
-      DropdownMenuItem<String>(
-        value: 'auto',
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: () => _openLocationSheet(loc: loc, allItems: allItems),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Theme.of(context).dividerColor),
+        ),
         child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.my_location, size: 18),
-            const SizedBox(width: 8),
-            Text(autoCity.isEmpty ? '自动定位（未知）' : '自动定位（$autoCity）'),
+            const Icon(Icons.place_outlined, size: 18),
+            const SizedBox(width: 6),
+            Text(_formatLocationTitle(loc)),
+            const SizedBox(width: 6),
+            const Icon(Icons.expand_more, size: 18),
           ],
         ),
-      ),
-      if (cities.isNotEmpty)
-        const DropdownMenuItem<String>(
-          enabled: false,
-          value: '__divider__',
-          child: Padding(
-            padding: EdgeInsets.symmetric(vertical: 6),
-            child: Text('手动选择', style: TextStyle(color: Colors.grey)),
-          ),
-        ),
-      ...cities.map((c) {
-        return DropdownMenuItem<String>(value: 'manual:$c', child: Text(c));
-      }),
-    ];
-
-    return DropdownButtonHideUnderline(
-      child: DropdownButton<String>(
-        value: value,
-        items: items,
-        onChanged: (v) async {
-          if (v == null || v == '__divider__') return;
-
-          if (v == 'auto') {
-            await _saveCityPref(mode: 'auto', manualCity: null);
-            await _refresh();
-            return;
-          }
-
-          if (v.startsWith('manual:')) {
-            final c = v.substring('manual:'.length).trim();
-            await _saveCityPref(mode: 'manual', manualCity: c);
-            await _refresh();
-            return;
-          }
-        },
       ),
     );
   }
@@ -394,22 +745,22 @@ class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
         }
 
         if (provider.error != null && provider.jobPostings.isEmpty) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    provider.error ?? '加载任务大厅失败，请稍后重试',
-                    style: const TextStyle(color: Colors.red),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 12),
-                  ElevatedButton(onPressed: _refresh, child: const Text('重试')),
-                ],
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              Text(
+                provider.error ?? '加载任务大厅失败，请稍后重试',
+                style: const TextStyle(color: Colors.red),
+                textAlign: TextAlign.center,
               ),
-            ),
+              const SizedBox(height: 12),
+              Center(
+                child: ElevatedButton(
+                  onPressed: _refresh,
+                  child: const Text('重试'),
+                ),
+              ),
+            ],
           );
         }
 
@@ -423,7 +774,45 @@ class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
                 return c == effectiveCity;
               }).toList();
 
-        if (items.isEmpty) {
+        final filteredByDistance = (_maxDistanceKm == null)
+            ? items
+            : items.where((p) {
+                final d = calcDistanceKm(
+                  loc.position,
+                  p.storeLatitude,
+                  p.storeLongitude,
+                );
+                if (d == null) return true;
+                return d <= _maxDistanceKm!;
+              }).toList();
+
+        final sortedItems = List<JobPosting>.from(filteredByDistance);
+        if (_sortBy == 'distance') {
+          sortedItems.sort((a, b) {
+            final da = calcDistanceKm(
+              loc.position,
+              a.storeLatitude,
+              a.storeLongitude,
+            );
+            final db = calcDistanceKm(
+              loc.position,
+              b.storeLatitude,
+              b.storeLongitude,
+            );
+            if (da == null && db == null) return 0;
+            if (da == null) return 1;
+            if (db == null) return -1;
+            return da.compareTo(db);
+          });
+        } else if (_sortBy == 'reward') {
+          sortedItems.sort((a, b) {
+            final ra = a.rewardAmount ?? 0;
+            final rb = b.rewardAmount ?? 0;
+            return rb.compareTo(ra);
+          });
+        }
+
+        if (filteredByDistance.isEmpty) {
           return RefreshIndicator(
             onRefresh: _refresh,
             child: ListView(
@@ -454,7 +843,7 @@ class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
         return RefreshIndicator(
           onRefresh: _refresh,
           child: ListView.builder(
-            itemCount: items.length + 1,
+            itemCount: sortedItems.length + 1,
             itemBuilder: (context, index) {
               if (index == 0) {
                 return Padding(
@@ -466,7 +855,7 @@ class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
                 );
               }
 
-              final p = items[index - 1];
+              final p = sortedItems[index - 1];
 
               final title = p.storeName != null && p.storeName!.isNotEmpty
                   ? '${p.clientName} - ${p.projectName} - ${p.storeName}'
@@ -536,13 +925,6 @@ class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
                               spacing: 8,
                               runSpacing: 4,
                               children: [
-                                if (p.avoidVisitDates.isNotEmpty ||
-                                    p.avoidVisitDateRanges.isNotEmpty)
-                                  AvoidDatesChip(
-                                    rawDates: p.avoidVisitDates,
-                                    ranges: p.avoidVisitDateRanges,
-                                    foldThreshold: 6,
-                                  ),
                                 if (storeLine != null)
                                   InfoChip(
                                     icon: Icons.storefront_outlined,
@@ -553,7 +935,19 @@ class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
                                   InfoChip(
                                     icon: Icons.date_range_outlined,
                                     text:
-                                        '项目周期：${p.projectStartDate} 至 ${p.projectEndDate}',
+                                        '项目周期：${formatDateZh(parseDate(p.projectStartDate))} 至 ${formatDateZh(parseDate(p.projectEndDate))}',
+                                  ),
+                                if (p.rewardAmount != null)
+                                  InfoChip(
+                                    icon: Icons.paid_outlined,
+                                    text:
+                                        '任务报酬 ${formatCurrency(p.rewardAmount, p.currency)}',
+                                  ),
+                                if ((p.reimbursementAmount ?? 0) > 0)
+                                  InfoChip(
+                                    icon: Icons.receipt_long_outlined,
+                                    text:
+                                        '报销 ${formatCurrency(p.reimbursementAmount, p.currency)}',
                                   ),
                                 if (distanceText != null)
                                   InfoChip(
@@ -576,6 +970,15 @@ class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
                                   ),
                               ],
                             ),
+                            if (p.avoidVisitDates.isNotEmpty ||
+                                p.avoidVisitDateRanges.isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              AvoidDatesChip(
+                                rawDates: p.avoidVisitDates,
+                                ranges: p.avoidVisitDateRanges,
+                                foldThreshold: 6,
+                              ),
+                            ],
                           ],
                         ),
                       ),

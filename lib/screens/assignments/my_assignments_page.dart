@@ -7,30 +7,21 @@ import '../../utils/map_selector.dart';
 import '../../models/api_models.dart';
 import '../../providers/assignment_provider.dart';
 import '../../providers/location_provider.dart';
-import '../../services/api_service.dart';
 import '../../widgets/info_chip.dart';
 import '../../utils/location_utils.dart';
-import '../../utils/snackbar.dart';
+import '../../utils/date_format.dart';
+import '../../utils/currency_format.dart';
 import '../../main.dart';
+import '../../widgets/avoid_dates_chip.dart';
+import '../../utils/status_format.dart';
 
-/// 把后端的状态英文码映射成前端展示用的中文文案
-String statusLabel(String status) {
-  switch (status) {
-    case 'pending':
-      return '未开始';
-    case 'in_progress':
-      return '进行中';
-    case 'draft':
-      return '草稿';
-    case 'submitted':
-      return '已提交';
-    case 'reviewed':
-      return '已审核';
-    case 'cancelled':
-      return '已取消';
-    default:
-      return status;
+/// 统一状态文案（优先使用当前提交状态）
+String statusLabel(Assignment a) {
+  final current = a.currentSubmissionStatus;
+  if (current != null && current.isNotEmpty) {
+    return formatStatusLabel(current);
   }
+  return formatStatusLabel(a.status);
 }
 
 class MyAssignmentsPage extends StatefulWidget {
@@ -86,113 +77,26 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> with RouteAware {
     super.dispose();
   }
 
-  Future<void> _handleCancelAssignment(Assignment assignment) async {
-    final provider = context.read<AssignmentProvider>();
+  Future<void> _openDetail(Assignment a) async {
+    final needRefresh = await Navigator.pushNamed(
+      context,
+      '/assignment-detail',
+      arguments: a,
+    );
 
-    try {
-      // 第一步：预览
-      final preview = await provider.cancelAssignment(
-        assignmentId: assignment.id,
-        confirm: false,
-      );
-
-      if (!preview.confirmRequired) {
-        if (!mounted) return;
-        showSuccessSnackBar(context, preview.detail);
-        await _refresh();
-        return;
-      }
-
-      if (!mounted) return;
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (ctx) {
-          return AlertDialog(
-            title: const Text('确认取消任务'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(preview.detail),
-                if (preview.rule != null) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    preview.rule!,
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-                ],
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(false),
-                child: const Text('保留任务'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(true),
-                child: const Text('确认取消'),
-              ),
-            ],
-          );
-        },
-      );
-
-      if (confirmed != true) {
-        return;
-      }
-
-      // 第二步：真正取消
-      final result = await provider.cancelAssignment(
-        assignmentId: assignment.id,
-        confirm: true,
-      );
-
-      if (!mounted) return;
-      showSuccessSnackBar(context, result.detail);
+    if (needRefresh == true) {
       await _refresh();
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      showErrorSnackBar(context, e, fallback: '操作失败，请稍后重试');
-    } catch (e) {
-      if (!mounted) return;
-      showErrorSnackBar(context, e, fallback: '取消任务失败，请稍后再试');
     }
   }
 
-  // 主按钮文案：开始 / 继续 / 查看
-  String _primaryActionLabel(Assignment a) {
-    switch (a.status) {
-      case 'pending':
-        return '开始填写';
-      case 'in_progress':
-      case 'draft':
-        return '继续填写';
-      case 'submitted':
-      case 'reviewed':
-        return '查看填写';
-      case 'cancelled':
-        return '已取消';
-      default:
-        return '开始填写';
-    }
-  }
-
-  bool _primaryActionEnabled(Assignment a) {
-    return a.status != 'cancelled';
-  }
-
-  /// 右侧按钮区域：主操作（开始/继续/查看） + 取消任务
+  /// 右侧按钮区域：查看详情 + 状态/计划日期
   Widget _buildTrailing(Assignment a, {required bool loading}) {
-    const trailingWidth = 120.0;
+    const trailingWidth = 136.0;
 
-    final status = a.status;
-    final canCancel =
-        !(status == 'submitted' ||
-            status == 'reviewed' ||
-            status == 'cancelled');
-
-    final primaryLabel = _primaryActionLabel(a);
-    final primaryEnabled = _primaryActionEnabled(a);
+    final plannedVisit = a.plannedVisitDate;
+    final plannedVisitText =
+        plannedVisit != null ? '计划走访日期：${formatDateZh(plannedVisit)}' : null;
+    final statusText = statusLabel(a);
 
     return SizedBox(
       width: trailingWidth,
@@ -202,20 +106,7 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> with RouteAware {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: (!loading && primaryEnabled)
-                  ? () async {
-                      final needRefresh = await Navigator.pushNamed(
-                        context,
-                        '/survey-fill',
-                        arguments: a,
-                      );
-
-                      // ⭐ 如果填写页面告诉我们需要刷新，则重新拉任务
-                      if (needRefresh == true) {
-                        await _refresh();
-                      }
-                    }
-                  : null,
+              onPressed: loading ? null : () => _openDetail(a),
               style: ElevatedButton.styleFrom(
                 minimumSize: const Size(0, 32),
                 padding: const EdgeInsets.symmetric(
@@ -223,19 +114,21 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> with RouteAware {
                   vertical: 6,
                 ),
               ),
-              child: Text(primaryLabel, overflow: TextOverflow.ellipsis),
+              child: const Text('查看详情', overflow: TextOverflow.ellipsis),
             ),
           ),
-          const SizedBox(height: 6),
-          TextButton(
-            onPressed: (!loading && canCancel)
-                ? () => _handleCancelAssignment(a)
-                : null,
-            style: TextButton.styleFrom(
-              minimumSize: const Size(0, 32),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          if (plannedVisitText != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: InfoChip(
+                icon: Icons.event_outlined,
+                text: plannedVisitText,
+              ),
             ),
-            child: const Text('取消任务'),
+          const SizedBox(height: 6),
+          InfoChip(
+            icon: Icons.info_outline,
+            text: statusText,
           ),
         ],
       ),
@@ -260,14 +153,21 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> with RouteAware {
       children: [
         if (storeLine != null)
           InfoChip(icon: Icons.storefront_outlined, text: storeLine),
-        InfoChip(
-          icon: Icons.schedule_outlined,
-          text: '创建时间：${a.createdAtText}',
-        ),
-        if (a.plannedVisitDateText != null)
+        if (a.projectStartDate != null && a.projectEndDate != null)
           InfoChip(
-            icon: Icons.event_outlined,
-            text: '计划访问：${a.plannedVisitDateText}',
+            icon: Icons.date_range_outlined,
+            text:
+                '项目周期：${formatDateZh(a.projectStartDate)} 至 ${formatDateZh(a.projectEndDate)}',
+          ),
+        if (a.rewardAmount != null)
+          InfoChip(
+            icon: Icons.paid_outlined,
+            text: '任务报酬 ${formatCurrency(a.rewardAmount, a.currency)}',
+          ),
+        if ((a.reimbursementAmount ?? 0) > 0)
+          InfoChip(
+            icon: Icons.receipt_long_outlined,
+            text: '报销 ${formatCurrency(a.reimbursementAmount, a.currency)}',
           ),
         if (distanceText != null)
           InfoChip(icon: Icons.place_outlined, text: '距离门店 $distanceText'),
@@ -297,22 +197,22 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> with RouteAware {
         }
 
         if (provider.error != null && provider.assignments.isEmpty) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    provider.error ?? '加载任务失败，请稍后重试',
-                    style: const TextStyle(color: Colors.red),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 12),
-                  ElevatedButton(onPressed: _refresh, child: const Text('重试')),
-                ],
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              Text(
+                provider.error ?? '加载任务失败，请稍后重试',
+                style: const TextStyle(color: Colors.red),
+                textAlign: TextAlign.center,
               ),
-            ),
+              const SizedBox(height: 12),
+              Center(
+                child: ElevatedButton(
+                  onPressed: _refresh,
+                  child: const Text('重试'),
+                ),
+              ),
+            ],
           );
         }
 
@@ -346,6 +246,9 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> with RouteAware {
               final title = store.isNotEmpty
                   ? '$client - $project - $store'
                   : '$client - $project';
+              final desc = (a.postingDescription ?? '').trim().isNotEmpty
+                  ? a.postingDescription!
+                  : (a.taskContent ?? '').trim();
 
               return Card(
                 child: Padding(
@@ -391,8 +294,24 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> with RouteAware {
                               a.questionnaireTitle ?? '',
                               style: theme.textTheme.bodyMedium,
                             ),
+                            if (desc.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                desc,
+                                style: theme.textTheme.bodySmall,
+                              ),
+                            ],
                             const SizedBox(height: 6),
                             _buildBottomMeta(a, loc),
+                            if (a.avoidVisitDates.isNotEmpty ||
+                                a.avoidVisitDateRanges.isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              AvoidDatesChip(
+                                rawDates: a.avoidVisitDates,
+                                ranges: a.avoidVisitDateRanges,
+                                foldThreshold: 6,
+                              ),
+                            ],
                           ],
                         ),
                       ),

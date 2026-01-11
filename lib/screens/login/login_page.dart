@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:local_auth/local_auth.dart';
 
 import '../../providers/auth_provider.dart';
+import '../../providers/location_provider.dart';
 import '../../utils/snackbar.dart';
 import '../../widgets/glass_card.dart';
 import '../../widgets/app_logo_header.dart';
@@ -83,10 +84,12 @@ class _LoginPageState extends State<LoginPage> {
       _rememberMe = remember;
       _boundUsername = bound;
 
-      if (remember && savedUser != null && savedUser.trim().isNotEmpty) {
-        _usernameCtrl.text = savedUser.trim();
-      } else if (!remember && bound != null && bound.isNotEmpty) {
-        _usernameCtrl.text = bound;
+      if (_usernameCtrl.text.trim().isEmpty) {
+        if (remember && savedUser != null && savedUser.trim().isNotEmpty) {
+          _usernameCtrl.text = savedUser.trim();
+        } else if (!remember && bound != null && bound.isNotEmpty) {
+          _usernameCtrl.text = bound;
+        }
       }
     });
   }
@@ -104,11 +107,17 @@ class _LoginPageState extends State<LoginPage> {
     }
 
     final auth = context.read<AuthProvider>();
+    final loc = context.read<LocationProvider>();
+    await loc.ensureLocation();
     await auth.login(
       username,
       password,
       rememberAccount: _rememberMe,
       enableBiometric: _enableBiometric,
+      lastLoginLat: loc.position?.latitude,
+      lastLoginLng: loc.position?.longitude,
+      lastLoginCity: loc.city,
+      lastLoginAddress: loc.address,
     );
 
     if (!mounted) return;
@@ -159,6 +168,14 @@ class _LoginPageState extends State<LoginPage> {
       if (!mounted) return;
 
       if (auth.currentUser != null) {
+        final loc = context.read<LocationProvider>();
+        await loc.ensureLocation();
+        await auth.updateLastLoginLocation(
+          lat: loc.position?.latitude,
+          lng: loc.position?.longitude,
+          city: loc.city,
+          address: loc.address,
+        );
         Navigator.pushReplacementNamed(context, '/home');
       } else {
         showErrorSnackBar(context, '快速登录失败，请使用密码登录');
@@ -269,7 +286,7 @@ class _LoginPageState extends State<LoginPage> {
                               children: [
                                 const AppLogoHeader(spacingAfter: 18),
 
-                                // 用户名
+                                // 账号
                                 TextField(
                                   controller: _usernameCtrl,
                                   focusNode: _usernameFocus,
@@ -284,7 +301,7 @@ class _LoginPageState extends State<LoginPage> {
                                   },
                                   decoration: _iosFieldDecoration(
                                     isDark: isDark,
-                                    hint: '用户名 / 手机号',
+                                    hint: '账号 / 邮箱',
                                     icon: Icons.person_outline,
                                   ),
                                 ),
@@ -401,7 +418,7 @@ class _LoginPageState extends State<LoginPage> {
                                                       .isEmpty) {
                                                 showErrorSnackBar(
                                                   context,
-                                                  '请先输入用户名，再开启生物识别',
+                                                  '请先输入账号，再开启生物识别',
                                                 );
                                                 return;
                                               }
@@ -418,7 +435,12 @@ class _LoginPageState extends State<LoginPage> {
                                                         _usernameCtrl.text,
                                                   );
 
-                                              await _loadStoredData();
+                                              if (v) {
+                                                setState(() {
+                                                  _boundUsername =
+                                                      _usernameCtrl.text.trim();
+                                                });
+                                              }
                                             }
                                           : null,
                                     ),

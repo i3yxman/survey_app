@@ -192,11 +192,28 @@ class ApiService {
   // Auth
   // =========================
 
-  Future<LoginResult> login(String identifier, String password) async {
+  Future<LoginResult> login(
+    String identifier,
+    String password, {
+    double? lastLoginLat,
+    double? lastLoginLng,
+    String? lastLoginCity,
+    String? lastLoginAddress,
+  }) async {
     try {
+      final payload = {
+        'identifier': identifier,
+        'password': password,
+        if (lastLoginLat != null) 'last_login_lat': lastLoginLat,
+        if (lastLoginLng != null) 'last_login_lng': lastLoginLng,
+        if (lastLoginCity != null && lastLoginCity.trim().isNotEmpty)
+          'last_login_city': lastLoginCity.trim(),
+        if (lastLoginAddress != null && lastLoginAddress.trim().isNotEmpty)
+          'last_login_address': lastLoginAddress.trim(),
+      };
       final resp = await _dio.post(
         '/api/accounts/login/',
-        data: {'identifier': identifier, 'password': password},
+        data: payload,
         options: Options(contentType: Headers.jsonContentType),
       );
 
@@ -267,6 +284,25 @@ class ApiService {
     }
   }
 
+  Future<Map<String, dynamic>> updateProfile(Map<String, dynamic> payload) async {
+    try {
+      final resp = await _dio.patch(
+        '/api/accounts/me/',
+        data: payload,
+        options: Options(contentType: Headers.jsonContentType),
+      );
+      final data = _normalizeData(resp.data);
+      if (data is! Map<String, dynamic>) {
+        throw ApiException(userMessage: "更新资料失败：返回格式错误");
+      }
+      return data;
+    } on DioException catch (e) {
+      _throwDioError(e, fallback: "更新资料失败");
+    } catch (e) {
+      throw ApiException(userMessage: "网络异常，请稍后重试", body: e.toString());
+    }
+  }
+
   // =========================
   // Assignments
   // =========================
@@ -301,10 +337,33 @@ class ApiService {
     }
   }
 
+  Future<List<Map<String, dynamic>>> getRegions() async {
+    try {
+      final resp = await _dio.get('/api/assignments/regions/');
+      final data = _normalizeData(resp.data);
+      final regions = data is Map<String, dynamic> ? data['regions'] : null;
+      if (regions is! List) return [];
+      return regions
+          .whereType<Map<String, dynamic>>()
+          .map((r) => {
+                'name': r['name']?.toString() ?? '',
+                'cities': (r['cities'] as List?)?.map((e) => e.toString()).toList() ?? <String>[],
+              })
+          .where((r) => (r['name'] as String).trim().isNotEmpty)
+          .toList();
+    } on DioException catch (e) {
+      _throwDioError(e, fallback: "获取省市列表失败");
+    } catch (e) {
+      throw ApiException(userMessage: "网络异常，请稍后重试", body: e.toString());
+    }
+  }
+
   Future<Map<String, dynamic>> applyJobPosting(
     int postingId, {
     required DateTime plannedVisitDate,
   }) async {
+    // ignore: avoid_print
+    print('[JOB_POSTING] apply postingId=$postingId plannedVisitDate=$plannedVisitDate');
     try {
       final resp = await _dio.post(
         '/api/assignments/job-postings/$postingId/apply/',
@@ -328,6 +387,8 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>> cancelJobPostingApply(int postingId) async {
+    // ignore: avoid_print
+    print('[JOB_POSTING] cancel_apply postingId=$postingId');
     try {
       final resp = await _dio.post(
         '/api/assignments/job-postings/$postingId/cancel/',
@@ -452,6 +513,8 @@ class ApiService {
     required int assignmentId,
     bool confirm = false,
   }) async {
+    // ignore: avoid_print
+    print('[ASSIGNMENT] cancel assignmentId=$assignmentId confirm=$confirm');
     try {
       final resp = await _dio.post(
         '/api/assignments/my-assignments/$assignmentId/cancel/',
@@ -488,10 +551,20 @@ class ApiService {
   // Survey
   // =========================
 
-  Future<QuestionnaireDto> fetchQuestionnaireDetail(int questionnaireId) async {
+  Future<QuestionnaireDto> fetchQuestionnaireDetail(
+    int questionnaireId, {
+    int? assignmentId,
+    int? storeId,
+    int? groupId,
+  }) async {
     try {
+      final params = <String, dynamic>{};
+      if (assignmentId != null) params['assignment_id'] = assignmentId;
+      if (storeId != null) params['store_id'] = storeId;
+      if (groupId != null) params['group_id'] = groupId;
       final resp = await _dio.get(
         '/api/survey/questionnaires/$questionnaireId/',
+        queryParameters: params.isEmpty ? null : params,
       );
       final data = _normalizeData(resp.data);
       return QuestionnaireDto.fromJson(data as Map<String, dynamic>);
@@ -523,6 +596,13 @@ class ApiService {
       final m = <String, dynamic>{'question': questionId};
       if (draft.textValue != null) m['text_value'] = draft.textValue;
       if (draft.numberValue != null) m['number_value'] = draft.numberValue;
+      if (draft.dateValue != null) m['date_value'] = draft.dateValue;
+      if (draft.timeValue != null) m['time_value'] = draft.timeValue;
+      if (draft.locationLat != null) m['location_lat'] = draft.locationLat;
+      if (draft.locationLng != null) m['location_lng'] = draft.locationLng;
+      if (draft.locationAddress != null) {
+        m['location_address'] = draft.locationAddress;
+      }
       if (draft.selectedOptionIds.isNotEmpty) {
         m['selected_option_ids'] = draft.selectedOptionIds;
       }

@@ -36,7 +36,10 @@ class JobPostingsProvider extends ChangeNotifier {
 
     try {
       final list = await _repo.fetchJobPostings();
-      _jobPostings = list;
+      _jobPostings = list
+          .where((p) => p.status == 'open')
+          .where((p) => p.applicationStatus != 'approved')
+          .toList();
     } catch (e) {
       _jobPostings = [];
       _error = userMessageFrom(e, fallback: '加载任务大厅失败，请稍后重试');

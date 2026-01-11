@@ -5,8 +5,22 @@ import 'package:provider/provider.dart';
 
 import '../../providers/auth_provider.dart';
 
-class AccountPage extends StatelessWidget {
+class AccountPage extends StatefulWidget {
   const AccountPage({super.key});
+
+  @override
+  State<AccountPage> createState() => _AccountPageState();
+}
+
+class _AccountPageState extends State<AccountPage> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final auth = context.read<AuthProvider>();
+      auth.refreshProfile();
+    });
+  }
 
   Future<void> _onLogoutPressed(BuildContext context) async {
     final auth = context.read<AuthProvider>();
@@ -71,7 +85,9 @@ class AccountPage extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            user?.username ?? '未登录',
+                            user?.fullName?.isNotEmpty == true
+                                ? user!.fullName!
+                                : (user?.email ?? user?.username ?? '未登录'),
                             style: theme.textTheme.titleMedium,
                           ),
                           const SizedBox(height: 4),
@@ -85,12 +101,44 @@ class AccountPage extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('个人信息', style: theme.textTheme.titleSmall),
+                    const SizedBox(height: 12),
+                    _buildInfoRow('账号/邮箱', user?.email ?? user?.username ?? '—'),
+                    _buildInfoRow('手机号码', user?.phone ?? '—'),
+                    _buildInfoRow('姓名', user?.fullName ?? '—'),
+                    _buildInfoRow('性别', user?.gender ?? '—'),
+                    _buildInfoRow('身份证号码', user?.idNumber ?? '—'),
+                    _buildInfoRow('省份', user?.province ?? '—'),
+                    _buildInfoRow('城市', user?.city ?? '—'),
+                    _buildInfoRow('地址', user?.address ?? '—'),
+                    _buildInfoRow('支付宝账号', user?.alipayAccount ?? '—'),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: () => Navigator.pushNamed(context, '/account-edit'),
+                        child: const Text('编辑资料'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Card(
               child: Column(
                 children: [
                   ListTile(
-                    leading: const Icon(Icons.info_outline),
-                    title: const Text('当前版本'),
-                    subtitle: const Text('1.0.0'),
+                    leading: const Icon(Icons.notifications_active_outlined),
+                    title: const Text('通知偏好'),
+                    onTap: () {
+                      Navigator.pushNamed(context, '/notification-settings');
+                    },
                   ),
                   const Divider(height: 0),
                   ListTile(
@@ -111,6 +159,21 @@ class AccountPage extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 96,
+            child: Text(label, style: const TextStyle(color: Colors.grey)),
+          ),
+          Expanded(child: Text(value)),
+        ],
       ),
     );
   }

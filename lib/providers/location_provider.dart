@@ -9,11 +9,13 @@ import '../utils/location_utils.dart';
 class LocationProvider extends ChangeNotifier {
   Position? _position;
   String? _city; // ✅ 新增：当前城市（如 “上海市”）
+  String? _address; // 最近定位地址
   bool _isLoading = false;
   String? _error;
 
   Position? get position => _position;
   String? get city => _city;
+  String? get address => _address;
   bool get isLoading => _isLoading;
   String? get error => _error;
 
@@ -53,8 +55,18 @@ class LocationProvider extends ChangeNotifier {
       } else {
         _city = null;
       }
+
+      final parts = [
+        p?.administrativeArea,
+        p?.locality,
+        p?.subLocality,
+        p?.thoroughfare,
+        p?.subThoroughfare,
+      ].whereType<String>().map((v) => v.trim()).where((v) => v.isNotEmpty);
+      _address = parts.isEmpty ? null : parts.join('');
     } catch (_) {
       _city = null; // 失败就保持未知，不影响其它功能
+      _address = null;
     }
 
     _error = null;
@@ -65,6 +77,7 @@ class LocationProvider extends ChangeNotifier {
   Future<void> refresh() async {
     _position = null;
     _city = null;
+    _address = null;
     await ensureLocation();
   }
 }
