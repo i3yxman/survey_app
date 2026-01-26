@@ -322,6 +322,32 @@ class ApiService {
     }
   }
 
+  Future<Map<String, dynamic>> updatePlannedVisitDate({
+    required int assignmentId,
+    required DateTime plannedVisitDate,
+  }) async {
+    try {
+      final resp = await _dio.patch(
+        '/api/assignments/my-assignments/$assignmentId/planned-visit-date/',
+        data: {
+          'planned_visit_date': plannedVisitDate.toIso8601String().substring(
+            0,
+            10,
+          ),
+        },
+        options: Options(contentType: Headers.jsonContentType),
+      );
+      final data = _normalizeData(resp.data);
+      if (data == null) return {};
+      if (data is Map<String, dynamic>) return data;
+      throw ApiException(userMessage: '计划走访日期更新失败：返回格式错误');
+    } on DioException catch (e) {
+      _throwDioError(e, fallback: '计划走访日期更新失败');
+    } catch (e) {
+      throw ApiException(userMessage: '网络异常，请稍后重试', body: e.toString());
+    }
+  }
+
   Future<List<JobPosting>> getJobPostings() async {
     try {
       final resp = await _dio.get('/api/assignments/job-postings/');
@@ -588,6 +614,12 @@ class ApiService {
       final hasData =
           (draft.textValue != null && draft.textValue!.trim().isNotEmpty) ||
           draft.numberValue != null ||
+          (draft.dateValue != null && draft.dateValue!.trim().isNotEmpty) ||
+          (draft.timeValue != null && draft.timeValue!.trim().isNotEmpty) ||
+          draft.locationLat != null ||
+          draft.locationLng != null ||
+          (draft.locationAddress != null &&
+              draft.locationAddress!.trim().isNotEmpty) ||
           draft.selectedOptionIds.isNotEmpty ||
           draft.mediaFileIds.isNotEmpty;
 

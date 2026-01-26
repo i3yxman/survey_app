@@ -20,8 +20,6 @@ class AvoidDatesChip extends StatefulWidget {
 }
 
 class _AvoidDatesChipState extends State<AvoidDatesChip> {
-  bool _expanded = false;
-
   String _fmtRange(Map<String, String> r) {
     final s = r['start'] ?? '';
     final e = r['end'] ?? '';
@@ -46,25 +44,13 @@ class _AvoidDatesChipState extends State<AvoidDatesChip> {
 
     if (items.isEmpty) return const SizedBox.shrink();
 
-    final shouldFold = items.length > widget.foldThreshold;
-    final shown = (!_expanded && shouldFold)
-        ? items.take(widget.foldThreshold).toList()
-        : items;
+    final text = '避访日期：${items.join('、')}';
 
-    final suffix = shouldFold
-        ? (_expanded ? ' 收起' : ' 等${items.length}段，展开')
-        : '';
-
-    final text = '避访日期：${shown.join('、')}$suffix';
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(999),
-      onTap: shouldFold ? () => setState(() => _expanded = !_expanded) : null,
-      child: Container(
+    return Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
           color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.55),
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
           ),
@@ -78,18 +64,17 @@ class _AvoidDatesChipState extends State<AvoidDatesChip> {
               color: theme.colorScheme.primary,
             ),
             const SizedBox(width: 4),
-            Flexible(
+            Expanded(
               child: Text(
                 text,
                 style: theme.textTheme.bodySmall,
-                maxLines: _expanded ? 6 : 2,
-                overflow: TextOverflow.ellipsis,
+                maxLines: null,
+                overflow: TextOverflow.visible,
                 softWrap: true,
               ),
             ),
           ],
         ),
-      ),
-    );
+      );
   }
 }

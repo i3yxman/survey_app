@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 
 class InfoChip extends StatelessWidget {
+  static const double _chipRadius = 12;
   final IconData icon;
   final String text;
   final VoidCallback? onTap;
@@ -28,7 +29,7 @@ class InfoChip extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: BorderRadius.circular(_chipRadius),
         border: Border.all(
           color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
         ),
@@ -69,7 +70,7 @@ class InfoChip extends StatelessWidget {
     if (onTap == null) return constrained;
 
     return InkWell(
-      borderRadius: BorderRadius.circular(999),
+      borderRadius: BorderRadius.circular(_chipRadius),
       onTap: onTap,
       child: constrained,
     );

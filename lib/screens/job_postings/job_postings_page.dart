@@ -171,6 +171,7 @@ class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
     _sortBy = sortBy;
   }
 
+
   Future<void> _loadRegions() async {
     if (_regionsLoading || _regions.isNotEmpty) return;
     _regionsLoading = true;

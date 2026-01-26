@@ -32,6 +32,16 @@ class SubmissionRepository {
     return _api.submitSubmission(submissionId);
   }
 
+  Future<void> updatePlannedVisitDate({
+    required int assignmentId,
+    required DateTime plannedVisitDate,
+  }) async {
+    await _api.updatePlannedVisitDate(
+      assignmentId: assignmentId,
+      plannedVisitDate: plannedVisitDate,
+    );
+  }
+
   Future<MediaFileDto> uploadMedia({
     required int questionId,
     required String mediaType,

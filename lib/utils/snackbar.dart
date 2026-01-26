@@ -11,7 +11,16 @@ void showErrorSnackBar(
   final messenger = ScaffoldMessenger.of(context);
   messenger.clearSnackBars(); // ✅ 避免叠加
   messenger.showSnackBar(
-    SnackBar(content: Text(msg)),
+    SnackBar(
+      content: Text(
+        msg,
+        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+      ),
+      backgroundColor: const Color(0xFFDC2626),
+      behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 4),
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+    ),
   );
 }
 

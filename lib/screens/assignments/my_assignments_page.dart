@@ -33,6 +33,8 @@ class MyAssignmentsPage extends StatefulWidget {
 }
 
 class _MyAssignmentsPageState extends State<MyAssignmentsPage> with RouteAware {
+  bool _statusInProgress = true;
+  bool _statusCompleted = false;
   @override
   void initState() {
     super.initState();
@@ -90,13 +92,61 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> with RouteAware {
     }
   }
 
+  bool _isCompleted(Assignment a) {
+    final status = (a.currentSubmissionStatus ?? a.status).toLowerCase();
+    return status == 'approved' || status == 'cancelled';
+  }
+
+  Widget _statusFilterBar() {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        FilterChip(
+          label: const Text('进行中'),
+          selected: _statusInProgress,
+          onSelected: (value) {
+            setState(() {
+              _statusInProgress = value;
+              if (!_statusInProgress && !_statusCompleted) {
+                _statusInProgress = true;
+              }
+            });
+          },
+        ),
+        FilterChip(
+          label: const Text('已完成'),
+          selected: _statusCompleted,
+          onSelected: (value) {
+            setState(() {
+              _statusCompleted = value;
+              if (!_statusInProgress && !_statusCompleted) {
+                _statusCompleted = true;
+              }
+            });
+          },
+        ),
+        ActionChip(
+          label: const Text('全选'),
+          onPressed: () {
+            setState(() {
+              _statusInProgress = true;
+              _statusCompleted = true;
+            });
+          },
+        ),
+      ],
+    );
+  }
+
   /// 右侧按钮区域：查看详情 + 状态/计划日期
   Widget _buildTrailing(Assignment a, {required bool loading}) {
     const trailingWidth = 136.0;
 
     final plannedVisit = a.plannedVisitDate;
-    final plannedVisitText =
-        plannedVisit != null ? '计划走访日期：${formatDateZh(plannedVisit)}' : null;
+    final plannedVisitText = plannedVisit != null
+        ? '计划走访日期：${formatDateZh(plannedVisit)}'
+        : '计划走访日期：未设置';
     final statusText = statusLabel(a);
 
     return SizedBox(
@@ -141,11 +191,16 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> with RouteAware {
       a.storeLatitude,
       a.storeLongitude,
     );
+    final plannedVisit = a.plannedVisitDate;
+    final plannedVisitText = plannedVisit != null
+        ? '计划走访日期：${formatDateZh(plannedVisit)}'
+        : '计划走访日期：未设置';
 
     return Wrap(
       spacing: 8,
       runSpacing: 4,
       children: [
+        InfoChip(icon: Icons.event_outlined, text: plannedVisitText),
         if (storeLine != null)
           InfoChip(icon: Icons.storefront_outlined, text: storeLine),
         if (a.projectStartDate != null && a.projectEndDate != null)
@@ -227,12 +282,49 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> with RouteAware {
 
         final theme = Theme.of(context);
 
+        final filteredItems = items.where((a) {
+          if (_statusInProgress && _statusCompleted) return true;
+          final completed = _isCompleted(a);
+          if (_statusCompleted && completed) return true;
+          if (_statusInProgress && !completed) return true;
+          return false;
+        }).toList();
+
         return RefreshIndicator(
           onRefresh: _refresh,
           child: ListView.builder(
-            itemCount: items.length,
+            itemCount: filteredItems.isEmpty
+                ? 2
+                : filteredItems.length + 1,
             itemBuilder: (context, index) {
-              final a = items[index];
+              if (index == 0) {
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '任务状态筛选',
+                          style: TextStyle(fontSize: 12, color: Colors.black54),
+                        ),
+                        const SizedBox(height: 6),
+                        _statusFilterBar(),
+                      ],
+                    ),
+                  ),
+                );
+              }
+
+              if (filteredItems.isEmpty) {
+                return const Padding(
+                  padding: EdgeInsets.only(top: 120),
+                  child: Center(child: Text('当前筛选条件下没有任务')),
+                );
+              }
+
+              final a = filteredItems[index - 1];
 
               final client = (a.clientName ?? '').trim();
               final project = (a.projectName ?? '').trim();

@@ -30,6 +30,7 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
   bool _inited = false;
   bool _actionLoading = false;
   bool _shouldRefreshOnPop = false;
+  final ApiService _api = ApiService();
 
   /// 主按钮文案：开始 / 继续 / 查看
   String _primaryActionLabel(Assignment a) {
@@ -76,6 +77,86 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
     double? storeLng,
   ) {
     return formatStoreDistance(loc.position, storeLat, storeLng);
+  }
+
+  Set<DateTime> _buildAvoidDateSet(Assignment a) {
+    final dates = <DateTime>{};
+    for (final raw in a.avoidVisitDates) {
+      final parsed = DateTime.tryParse(raw);
+      if (parsed == null) continue;
+      dates.add(DateTime(parsed.year, parsed.month, parsed.day));
+    }
+    for (final range in a.avoidVisitDateRanges) {
+      final startRaw = range['start'];
+      final endRaw = range['end'];
+      if (startRaw == null || endRaw == null) continue;
+      final start = DateTime.tryParse(startRaw);
+      final end = DateTime.tryParse(endRaw);
+      if (start == null || end == null) continue;
+      var cur = DateTime(start.year, start.month, start.day);
+      final last = DateTime(end.year, end.month, end.day);
+      while (!cur.isAfter(last)) {
+        dates.add(cur);
+        cur = cur.add(const Duration(days: 1));
+      }
+    }
+    return dates;
+  }
+
+  Future<void> _changePlannedVisitDate(Assignment a) async {
+    final start = a.projectStartDate;
+    final end = a.projectEndDate;
+    if (start == null || end == null) {
+      showErrorSnackBar(context, '项目未设置任务周期');
+      return;
+    }
+
+    final today = DateTime.now();
+    final todayDate = DateTime(today.year, today.month, today.day);
+    final first = start.isAfter(todayDate) ? start : todayDate;
+    final last = end;
+    if (last.isBefore(first)) {
+      showErrorSnackBar(context, '项目周期已结束，无法选择日期');
+      return;
+    }
+
+    final avoidDates = _buildAvoidDateSet(a);
+
+    DateTime? initialDate;
+    final current = a.plannedVisitDate;
+    if (current != null) {
+      final cur = DateTime(current.year, current.month, current.day);
+      if (!cur.isBefore(first) && !cur.isAfter(last) && !avoidDates.contains(cur)) {
+        initialDate = cur;
+      }
+    }
+    initialDate ??= first;
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: first,
+      lastDate: last,
+      selectableDayPredicate: (day) {
+        final d = DateTime(day.year, day.month, day.day);
+        return !avoidDates.contains(d);
+      },
+    );
+    if (picked == null) return;
+
+    try {
+      await _api.updatePlannedVisitDate(
+        assignmentId: a.id,
+        plannedVisitDate: picked,
+      );
+      if (!mounted) return;
+      showSuccessSnackBar(context, '计划走访日期已更新，问卷走访日期已同步');
+      _shouldRefreshOnPop = true;
+      await context.read<AssignmentProvider>().loadAssignments();
+    } catch (e) {
+      if (!mounted) return;
+      showErrorSnackBar(context, e, fallback: '计划走访日期更新失败');
+    }
   }
 
   Future<void> _openFill(Assignment a) async {
@@ -224,7 +305,7 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
           final plannedVisit = a.plannedVisitDate;
           final plannedVisitText = plannedVisit != null
               ? '计划走访日期：${formatDateZh(plannedVisit)}'
-              : null;
+              : '计划走访日期：未设置';
           final desc = (a.taskContent ?? '').trim().isNotEmpty
               ? a.taskContent!
               : (a.postingDescription ?? '').trim();
@@ -304,11 +385,10 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
                                         icon: Icons.info_outline,
                                         text: '状态：${statusLabel(a)}',
                                       ),
-                                      if (plannedVisitText != null)
-                                        InfoChip(
-                                          icon: Icons.event_outlined,
-                                          text: plannedVisitText,
-                                        ),
+                                      InfoChip(
+                                        icon: Icons.event_outlined,
+                                        text: plannedVisitText,
+                                      ),
                                       if (storeLine != null)
                                         InfoChip(
                                           icon: Icons.storefront_outlined,
@@ -343,6 +423,18 @@ class _AssignmentDetailPageState extends State<AssignmentDetailPage> {
                                         ),
                                     ],
                                   ),
+                                  if (a.status != 'cancelled')
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 8),
+                                      child: Align(
+                                        alignment: Alignment.centerLeft,
+                                        child: OutlinedButton.icon(
+                                          onPressed: () => _changePlannedVisitDate(a),
+                                          icon: const Icon(Icons.edit_calendar_outlined),
+                                          label: const Text('修改计划走访日期'),
+                                        ),
+                                      ),
+                                    ),
                                   if (a.avoidVisitDates.isNotEmpty ||
                                       a.avoidVisitDateRanges.isNotEmpty) ...[
                                     const SizedBox(height: 6),

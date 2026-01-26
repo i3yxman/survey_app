@@ -125,6 +125,43 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
 
   bool _shouldRefreshOnPop = false;
 
+  DateTime? _extractPlannedVisitDate() {
+    final q = _questionnaire;
+    if (q == null) return null;
+    for (final qu in q.questions) {
+      if (qu.type != 'visit_date') continue;
+      final draft = _answers[qu.id];
+      final raw = draft?.dateValue?.trim();
+      if (raw == null || raw.isEmpty) continue;
+      final parsed = DateTime.tryParse(raw);
+      if (parsed != null) return parsed;
+    }
+    return null;
+  }
+
+  bool _sameDate(DateTime a, DateTime b) {
+    return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
+
+  Future<bool> _syncPlannedVisitDate() async {
+    final planned = _extractPlannedVisitDate();
+    if (planned == null) return true;
+    final current = _assignment.plannedVisitDate;
+    if (current != null && _sameDate(current, planned)) return true;
+    try {
+      await _subRepo.updatePlannedVisitDate(
+        assignmentId: _assignment.id,
+        plannedVisitDate: planned,
+      );
+      _shouldRefreshOnPop = true;
+      return true;
+    } catch (e) {
+      if (!mounted) return false;
+      showErrorSnackBar(context, e, fallback: '计划走访日期同步失败');
+      return false;
+    }
+  }
+
   bool get _isReadOnly =>
       _submissionStatus == 'submitted' ||
       _submissionStatus == 'resubmitted' ||
@@ -401,6 +438,8 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     });
 
     try {
+      final ok = await _syncPlannedVisitDate();
+      if (!ok) return;
       final dto = await _subRepo.saveSubmission(
         submissionId: _submissionId,
         assignmentId: _assignment.id,
@@ -452,6 +491,8 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     });
 
     try {
+      final ok = await _syncPlannedVisitDate();
+      if (!ok) return;
       if (_submissionId == null) {
         final created = await _subRepo.saveSubmission(
           submissionId: null,
@@ -1175,17 +1216,28 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                         return null;
                       }
 
+                      final today = DateTime.now();
+                      final todayDate = DateTime(today.year, today.month, today.day);
+                      final isVisitDate = q.type == 'visit_date';
+                      final maxDate = isVisitDate && last.isAfter(todayDate) ? todayDate : last;
+
+                      if (maxDate.isBefore(first)) {
+                        if (!context.mounted) return;
+                        showErrorSnackBar(context, '走访日期不能选择未来日期');
+                        return;
+                      }
+
                       DateTime? initialDate;
                       if (draft.dateValue != null && draft.dateValue!.isNotEmpty) {
                         final parsed = DateTime.tryParse(draft.dateValue!);
                         if (parsed != null &&
                             !parsed.isBefore(first) &&
-                            !parsed.isAfter(last) &&
+                            !parsed.isAfter(maxDate) &&
                             !avoidDates.contains(DateTime(parsed.year, parsed.month, parsed.day))) {
                           initialDate = DateTime(parsed.year, parsed.month, parsed.day);
                         }
                       }
-                      initialDate ??= findFirstSelectable(first, last, avoidDates);
+                      initialDate ??= findFirstSelectable(first, maxDate, avoidDates);
                       if (initialDate == null) {
                         if (!context.mounted) return;
                         showErrorSnackBar(context, '项目周期内无可选日期');
@@ -1196,10 +1248,11 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                         context: context,
                         initialDate: initialDate,
                         firstDate: first,
-                        lastDate: last,
-                        selectableDayPredicate: q.type == 'visit_date'
+                        lastDate: maxDate,
+                        selectableDayPredicate: isVisitDate
                             ? (day) {
                                 final d = DateTime(day.year, day.month, day.day);
+                                if (d.isAfter(todayDate)) return false;
                                 return !avoidDates.contains(d);
                               }
                             : null,
