@@ -61,12 +61,12 @@ class _AvoidDatesChipState extends State<AvoidDatesChip> {
       borderRadius: BorderRadius.circular(999),
       onTap: shouldFold ? () => setState(() => _expanded = !_expanded) : null,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: theme.colorScheme.surface.withValues(alpha: 0.9),
+          color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.55),
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
-            color: theme.colorScheme.outline.withValues(alpha: 0.12),
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
           ),
         ),
         child: Row(

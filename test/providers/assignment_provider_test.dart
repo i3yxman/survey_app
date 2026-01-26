@@ -19,7 +19,7 @@ class FakeAssignmentRepositorySuccess extends AssignmentRepository {
         questionnaireId: 20,
         questionnaireTitle: 'Questionnaire Q1',
         status: 'pending',
-        createdAt: '2024-01-01T00:00:00Z',
+        createdAt: DateTime.parse('2024-01-01T00:00:00Z'),
       ),
     ];
   }

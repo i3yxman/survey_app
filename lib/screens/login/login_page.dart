@@ -107,6 +107,17 @@ class _LoginPageState extends State<LoginPage> {
     }
 
     final auth = context.read<AuthProvider>();
+
+    if (username.isEmpty || password.trim().isEmpty) {
+      await auth.login(
+        username,
+        password,
+        rememberAccount: _rememberMe,
+        enableBiometric: _enableBiometric,
+      );
+      return;
+    }
+
     final loc = context.read<LocationProvider>();
     await loc.ensureLocation();
     await auth.login(
@@ -472,17 +483,11 @@ class _LoginPageState extends State<LoginPage> {
                                 // 登录按钮（大圆角 iOS 风格）
                                 SizedBox(
                                   width: double.infinity,
-                                  height: 52,
+                                  height: 48,
                                   child: ElevatedButton(
                                     onPressed: auth.loading
                                         ? null
                                         : _handleLogin,
-                                    style: ElevatedButton.styleFrom(
-                                      elevation: 0,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(18),
-                                      ),
-                                    ),
                                     child: auth.loading
                                         ? const SizedBox(
                                             width: 22,
@@ -492,13 +497,7 @@ class _LoginPageState extends State<LoginPage> {
                                                   strokeWidth: 2,
                                                 ),
                                           )
-                                        : const Text(
-                                            '登录',
-                                            style: TextStyle(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
+                                        : const Text('登录'),
                                   ),
                                 ),
 
@@ -515,13 +514,6 @@ class _LoginPageState extends State<LoginPage> {
                                           : _biometricLogin,
                                       icon: const Icon(Icons.fingerprint),
                                       label: Text(_biometricLabel),
-                                      style: OutlinedButton.styleFrom(
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            18,
-                                          ),
-                                        ),
-                                      ),
                                     ),
                                   ),
                               ],

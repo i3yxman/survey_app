@@ -15,6 +15,7 @@ import '../../utils/date_format.dart';
 import '../../utils/currency_format.dart';
 import '../../main.dart';
 import '../../utils/map_selector.dart';
+import '../../widgets/app_button_styles.dart';
 
 class JobPostingsPage extends StatefulWidget {
   const JobPostingsPage({super.key});
@@ -252,10 +253,7 @@ class _JobPostingsPageState extends State<JobPostingsPage> with RouteAware {
             width: double.infinity,
             child: ElevatedButton(
               onPressed: loading ? null : () => _openDetail(p),
-              style: ElevatedButton.styleFrom(
-                minimumSize: const Size(0, 32),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              ),
+              style: AppButtonStyles.compactElevated(context),
               child: const Text('查看详情'),
             ),
           ),

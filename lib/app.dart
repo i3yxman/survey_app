@@ -13,6 +13,8 @@ import 'screens/job_postings/job_posting_detail_page.dart';
 import 'screens/splash/splash_page.dart';
 import 'screens/login/forgot_password_page.dart';
 import 'screens/account/change_password_page.dart';
+import 'screens/account/edit_account_page.dart';
+import 'screens/account/notification_settings_page.dart';
 import 'providers/auth_provider.dart';
 import 'providers/assignment_provider.dart';
 import 'providers/job_postings_provider.dart';
@@ -54,10 +56,19 @@ class MyApp extends StatelessWidget {
           '/login': (_) => const LoginPage(),
           '/home': (_) => const HomePage(),
           '/assignment-detail': (_) => const AssignmentDetailPage(),
-          '/job-posting-detail': (_) => const JobPostingDetailPage(),
+          '/job-posting-detail': (context) {
+            final role =
+                Provider.of<AuthProvider>(context, listen: false).currentUser?.role;
+            if (role == 'agent') {
+              return const HomePage();
+            }
+            return const JobPostingDetailPage();
+          },
           '/survey-fill': (_) => const SurveyFillPage(),
           '/forgot-password': (_) => const ForgotPasswordPage(),
           '/change-password': (_) => const ChangePasswordPage(),
+          '/account-edit': (_) => const EditAccountPage(),
+          '/notification-settings': (_) => const NotificationSettingsPage(),
         },
       ),
     );

@@ -19,8 +19,8 @@ class GlassScaffold extends StatelessWidget {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: isDark
-                ? const [Color(0xFF000000), Color(0xFF050506)]
-                : const [Color(0xFFF2F2F7), Color(0xFFE5E5EA)],
+                ? const [Color(0xFF0B0E12), Color(0xFF050608)]
+                : const [Color(0xFFF6F7FB), Color(0xFFE9ECF2)],
           ),
         ),
         child: SafeArea(

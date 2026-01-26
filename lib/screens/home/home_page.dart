@@ -20,12 +20,9 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   int _currentIndex = 0;
 
-  late final List<Widget> _pages;
-
   @override
   void initState() {
     super.initState();
-    _pages = const [MyAssignmentsPage(), JobPostingsPage(), AccountPage()];
 
     // ✅ 兜底：如果没有 currentUser，就回登录页
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -41,8 +38,53 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    final role = context.watch<AuthProvider>().currentUser?.role ?? '';
+    final isAgent = role == 'agent';
+    final pages = isAgent
+        ? const [MyAssignmentsPage(), AccountPage()]
+        : const [MyAssignmentsPage(), JobPostingsPage(), AccountPage()];
+    final items = isAgent
+        ? const [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.assignment_outlined),
+              activeIcon: Icon(Icons.assignment),
+              label: '我的任务',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.person_outline),
+              activeIcon: Icon(Icons.person),
+              label: '账号',
+            ),
+          ]
+        : const [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.assignment_outlined),
+              activeIcon: Icon(Icons.assignment),
+              label: '我的任务',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.store_mall_directory_outlined),
+              activeIcon: Icon(Icons.store_mall_directory),
+              label: '任务大厅',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.person_outline),
+              activeIcon: Icon(Icons.person),
+              label: '账号',
+            ),
+          ];
+
+    if (_currentIndex >= pages.length) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() {
+          _currentIndex = pages.length - 1;
+        });
+      });
+    }
+
     return Scaffold(
-      body: IndexedStack(index: _currentIndex, children: _pages),
+      body: IndexedStack(index: _currentIndex, children: pages),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: (idx) {
@@ -54,27 +96,11 @@ class _HomePageState extends State<HomePage> {
 
           if (idx == 0) {
             context.read<AssignmentProvider>().loadAssignments();
-          } else if (idx == 1) {
+          } else if (!isAgent && idx == 1) {
             context.read<JobPostingsProvider>().loadJobPostings();
           }
         },
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.assignment_outlined),
-            activeIcon: Icon(Icons.assignment),
-            label: '我的任务',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.store_mall_directory_outlined),
-            activeIcon: Icon(Icons.store_mall_directory),
-            label: '任务大厅',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person_outline),
-            activeIcon: Icon(Icons.person),
-            label: '账号',
-          ),
-        ],
+        items: items,
       ),
     );
   }

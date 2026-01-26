@@ -8,6 +8,7 @@ import '../../models/api_models.dart';
 import '../../providers/assignment_provider.dart';
 import '../../providers/location_provider.dart';
 import '../../widgets/info_chip.dart';
+import '../../widgets/app_button_styles.dart';
 import '../../utils/location_utils.dart';
 import '../../utils/date_format.dart';
 import '../../utils/currency_format.dart';
@@ -107,13 +108,7 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> with RouteAware {
             width: double.infinity,
             child: ElevatedButton(
               onPressed: loading ? null : () => _openDetail(a),
-              style: ElevatedButton.styleFrom(
-                minimumSize: const Size(0, 32),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
-              ),
+              style: AppButtonStyles.compactElevated(context),
               child: const Text('查看详情', overflow: TextOverflow.ellipsis),
             ),
           ),

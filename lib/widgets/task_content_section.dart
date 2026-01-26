@@ -115,7 +115,7 @@ class TaskContentSection extends StatelessWidget {
           MarkdownBody(
             data: trimmed,
             styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
-              p: theme.textTheme.bodyMedium,
+              p: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
             ),
           ),
         ],

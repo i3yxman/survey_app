@@ -19,17 +19,18 @@ class InfoChip extends StatelessWidget {
     final theme = Theme.of(context);
 
     final chipTextStyle = theme.textTheme.labelSmall?.copyWith(
-      color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.85),
-      fontWeight: FontWeight.w500,
+      color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.82),
+      fontWeight: FontWeight.w600,
+      letterSpacing: 0.1,
     );
 
     final child = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface.withValues(alpha: 0.9),
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.55),
         borderRadius: BorderRadius.circular(999),
         border: Border.all(
-          color: theme.colorScheme.outline.withValues(alpha: 0.12),
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
         ),
       ),
       child: Row(

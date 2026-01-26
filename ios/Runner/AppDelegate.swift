@@ -11,6 +11,8 @@ import UserNotifications
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+		XGPush.defaultManager().startXG(withAccessID:1600045812, accessKey:"I53UNCAYZ7DD", delegate:nil)
+
 
     // 1) 通知代理（前台展示用）
     UNUserNotificationCenter.current().delegate = self
@@ -60,3 +62,4 @@ import UserNotifications
     super.application(application, didFailToRegisterForRemoteNotificationsWithError: error)
   }
 }
+

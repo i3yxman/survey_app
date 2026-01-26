@@ -4,9 +4,10 @@ import 'package:flutter/material.dart';
 
 class AppTheme {
   // 系统蓝
-  static const _primaryBlue = Color(0xFF007AFF);
+  static const _primaryBlue = Color(0xFF1F4E79);
+  static const _accentSteel = Color(0xFF4F6C8D);
   // iOS 浅灰背景
-  static const _backgroundLight = Color(0xFFF2F2F7);
+  static const _backgroundLight = Color(0xFFF4F6FA);
 
   static ThemeData get lightTheme {
     final base = ThemeData(useMaterial3: true, brightness: Brightness.light);
@@ -15,7 +16,7 @@ class AppTheme {
       seedColor: _primaryBlue,
       brightness: Brightness.light,
       primary: _primaryBlue,
-      secondary: const Color(0xFF5856D6),
+      secondary: _accentSteel,
       background: _backgroundLight,
       surface: Colors.white,
     );
@@ -67,9 +68,10 @@ class AppTheme {
       // 卡片：大圆角 + 无阴影，类似 iOS 列表卡片
       cardTheme: CardThemeData(
         color: scheme.surface,
-        elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        shadowColor: Colors.black.withValues(alpha: 0.04),
+        elevation: 0.6,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        shadowColor: Colors.black.withValues(alpha: 0.06),
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       ),
       listTileTheme: ListTileThemeData(
@@ -80,7 +82,7 @@ class AppTheme {
       ),
       chipTheme: ChipThemeData(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
-        side: BorderSide(color: scheme.outlineVariant),
+        side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.6)),
         labelStyle: textTheme.labelSmall,
       ),
 
@@ -90,6 +92,21 @@ class AppTheme {
           backgroundColor: _primaryBlue,
           foregroundColor: Colors.white,
           elevation: 0,
+          minimumSize: const Size(0, 48),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          textStyle: textTheme.labelLarge?.copyWith(letterSpacing: 0),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: _primaryBlue,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          minimumSize: const Size(0, 48),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
@@ -100,6 +117,8 @@ class AppTheme {
       // Outlined 按钮
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
+          minimumSize: const Size(0, 48),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
@@ -119,7 +138,7 @@ class AppTheme {
       // 输入框：半透明浅灰填充 + 14 圆角，和你现在登录页一致
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: scheme.surfaceContainerHighest.withValues(alpha: 0.6),
+        fillColor: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide.none,
@@ -175,7 +194,7 @@ class AppTheme {
       seedColor: _primaryBlue,
       brightness: Brightness.dark,
       primary: _primaryBlue,
-      secondary: const Color(0xFF5E5CE6),
+      secondary: _accentSteel,
       background: const Color(0xFF000000),
       surface: const Color(0xFF1C1C1E), // iOS 深色卡片
     );
@@ -219,9 +238,10 @@ class AppTheme {
 
       cardTheme: CardThemeData(
         color: scheme.surface,
-        elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        shadowColor: Colors.black.withValues(alpha: 0.2),
+        elevation: 0.6,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        shadowColor: Colors.black.withValues(alpha: 0.3),
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       ),
       listTileTheme: ListTileThemeData(
@@ -241,6 +261,21 @@ class AppTheme {
           backgroundColor: _primaryBlue,
           foregroundColor: Colors.white,
           elevation: 0,
+          minimumSize: const Size(0, 48),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          textStyle: textTheme.labelLarge,
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: _primaryBlue,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          minimumSize: const Size(0, 48),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
@@ -250,6 +285,8 @@ class AppTheme {
 
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
+          minimumSize: const Size(0, 48),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),

@@ -15,6 +15,7 @@ import '../../utils/snackbar.dart';
 import '../../widgets/avoid_dates_chip.dart';
 import '../../widgets/info_chip.dart';
 import '../../widgets/task_content_section.dart';
+import '../../widgets/app_button_styles.dart';
 
 class JobPostingDetailPage extends StatefulWidget {
   const JobPostingDetailPage({super.key});
@@ -136,6 +137,19 @@ class _JobPostingDetailPageState extends State<JobPostingDetailPage> {
         final d = DateTime(day.year, day.month, day.day);
         return !avoidDates.contains(d);
       },
+      builder: (context, child) {
+        final theme = Theme.of(context);
+        return Theme(
+          data: theme.copyWith(
+            dialogTheme: DialogThemeData(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
 
     if (picked == null) return;
@@ -181,8 +195,9 @@ class _JobPostingDetailPageState extends State<JobPostingDetailPage> {
               onPressed: () => Navigator.of(ctx).pop(false),
               child: const Text('取消'),
             ),
-            TextButton(
+            ElevatedButton(
               onPressed: () => Navigator.of(ctx).pop(true),
+              style: AppButtonStyles.dangerFilled(ctx),
               child: const Text('撤销申请'),
             ),
           ],
@@ -262,7 +277,6 @@ class _JobPostingDetailPageState extends State<JobPostingDetailPage> {
 
           final applied = p.applicationStatus == 'applied' ||
               p.applicationStatus == 'approved';
-          final canModifyPlan = applied && p.status == 'open';
           final statusLabel = (p.status == 'open' || p.status == 'pending')
               ? (applied ? '已申请' : '待申请')
               : '已关闭';
@@ -447,62 +461,65 @@ class _JobPostingDetailPageState extends State<JobPostingDetailPage> {
                     Center(
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 360),
-                        child: Column(
-                          children: [
-                            SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton(
-                                onPressed: (_actionLoading || p.status != 'open')
-                                    ? null
-                                    : (applied
-                                        ? () => _handleApply(
-                                              p,
-                                              initialPlannedDate:
-                                                  p.plannedVisitDate != null
-                                                      ? DateTime.parse(
-                                                          p.plannedVisitDate!,
-                                                        )
-                                                      : null,
-                                            )
-                                        : () => _handleApply(p)),
-                                style: ElevatedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 24,
-                                    vertical: 12,
-                                  ),
-                                ),
-                                child: Text(
-                                  applied ? '修改计划走访日期' : '申请任务',
-                                ),
-                              ),
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.surfaceContainerHighest
+                                .withValues(alpha: 0.5),
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(
+                              color: theme.colorScheme.outlineVariant
+                                  .withValues(alpha: 0.5),
                             ),
-                            if (applied) ...[
-                              const SizedBox(height: 12),
-                              SizedBox(
-                                width: double.infinity,
-                                child: OutlinedButton(
-                                  onPressed: _actionLoading
-                                      ? null
-                                      : () => _handleCancel(p),
-                                  style: OutlinedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 24,
-                                      vertical: 12,
+                          ),
+                          child: Column(
+                            children: [
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton(
+                                    onPressed:
+                                        (_actionLoading || p.status != 'open')
+                                            ? null
+                                            : (applied
+                                                ? () => _handleApply(
+                                                      p,
+                                                      initialPlannedDate: p
+                                                                  .plannedVisitDate !=
+                                                              null
+                                                          ? DateTime.parse(
+                                                              p.plannedVisitDate!,
+                                                            )
+                                                          : null,
+                                                    )
+                                                : () => _handleApply(p)),
+                                    child: Text(
+                                      applied ? '修改计划走访日期' : '申请任务',
                                     ),
                                   ),
-                                  child: const Text('撤销申请'),
                                 ),
-                              ),
+                              if (applied) ...[
+                                const SizedBox(height: 12),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton(
+                                    onPressed: _actionLoading
+                                        ? null
+                                        : () => _handleCancel(p),
+                                    style: AppButtonStyles.dangerFilled(context),
+                                    child: const Text('撤销申请'),
+                                  ),
+                                ),
+                              ],
+                              if (p.status != 'open') ...[
+                                const SizedBox(height: 12),
+                                Text(
+                                  '任务已关闭，无法申请',
+                                  style: theme.textTheme.bodySmall
+                                      ?.copyWith(color: Colors.grey),
+                                ),
+                              ],
                             ],
-                            if (p.status != 'open') ...[
-                              const SizedBox(height: 12),
-                              Text(
-                                '任务已关闭，无法申请',
-                                style: theme.textTheme.bodySmall
-                                    ?.copyWith(color: Colors.grey),
-                              ),
-                            ],
-                          ],
+                          ),
                         ),
                       ),
                     ),

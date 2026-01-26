@@ -77,8 +77,8 @@ class PushTokenService {
     final api = ApiService();
     if (!api.hasToken) return;
 
-    final token = raw.trim();
-    if (token.isEmpty) return;
+    final token = _normalizeToken(raw);
+    if (token == null) return;
 
     final last = (await _storage.read(key: _lastPushedKey))?.trim();
     if (last == token) return;
@@ -87,5 +87,25 @@ class PushTokenService {
     await api.registerDeviceToken(platform: platform, token: token);
 
     await _storage.write(key: _lastPushedKey, value: token);
+  }
+
+  String? _normalizeToken(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return null;
+
+    final lower = trimmed.toLowerCase();
+    if (lower.contains('error') || lower.contains('debug')) return null;
+
+    final tpnsMatch = RegExp(
+      r'tpns token[:\\s]*([A-Za-z0-9]+)',
+      caseSensitive: false,
+    ).firstMatch(trimmed);
+    if (tpnsMatch != null) {
+      final token = tpnsMatch.group(1);
+      return token != null && token.isNotEmpty ? token : null;
+    }
+
+    if (RegExp(r'\\s').hasMatch(trimmed)) return null;
+    return trimmed;
   }
 }

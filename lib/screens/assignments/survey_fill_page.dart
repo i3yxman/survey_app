@@ -18,6 +18,7 @@ import '../../utils/error_message.dart';
 import '../../utils/snackbar.dart';
 import '../../utils/status_format.dart';
 import 'submission_comments_page.dart';
+import '../../widgets/app_button_styles.dart';
 
 class _ChinesePickerTextDelegate extends AssetPickerTextDelegate {
   const _ChinesePickerTextDelegate();
@@ -781,6 +782,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
             ),
             ElevatedButton(
               onPressed: () => Navigator.of(ctx).pop(true),
+              style: AppButtonStyles.dangerFilled(ctx),
               child: const Text('删除'),
             ),
           ],
@@ -1084,7 +1086,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
           maxLines: 1,
           readOnly: readOnly,
           decoration: const InputDecoration(
-            border: OutlineInputBorder(),
             hintText: '请输入内容',
           ),
         );
@@ -1094,7 +1095,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
           maxLines: 4,
           readOnly: readOnly,
           decoration: const InputDecoration(
-            border: OutlineInputBorder(),
             hintText: '请输入详细内容',
           ),
         );
@@ -1104,7 +1104,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           readOnly: readOnly,
           decoration: const InputDecoration(
-            border: OutlineInputBorder(),
             hintText: '请输入数字',
           ),
         );
@@ -1116,7 +1115,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
               child: TextFormField(
                 readOnly: true,
                 decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
                   hintText: '选择日期',
                 ),
                 controller: TextEditingController(text: draft.dateValue ?? ''),
@@ -1205,6 +1203,19 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                                 return !avoidDates.contains(d);
                               }
                             : null,
+                        builder: (context, child) {
+                          final theme = Theme.of(context);
+                          return Theme(
+                            data: theme.copyWith(
+                              dialogTheme: DialogThemeData(
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                              ),
+                            ),
+                            child: child!,
+                          );
+                        },
                       );
                       if (picked == null) return;
                       setState(() {
@@ -1226,7 +1237,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
               child: TextFormField(
                 readOnly: true,
                 decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
                   hintText: '选择时间',
                 ),
                 controller: TextEditingController(text: draft.timeValue ?? ''),
@@ -1240,6 +1250,19 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                       final picked = await showTimePicker(
                         context: context,
                         initialTime: TimeOfDay.now(),
+                        builder: (context, child) {
+                          final theme = Theme.of(context);
+                          return Theme(
+                            data: theme.copyWith(
+                              dialogTheme: DialogThemeData(
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                              ),
+                            ),
+                            child: child!,
+                          );
+                        },
                       );
                       if (picked == null) return;
                       setState(() {
@@ -1294,7 +1317,6 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
               readOnly: readOnly,
               maxLines: 2,
               decoration: const InputDecoration(
-                border: OutlineInputBorder(),
                 hintText: '地址描述（可选）',
               ),
               onChanged: (v) {

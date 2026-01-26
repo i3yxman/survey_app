@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/auth_provider.dart';
+import '../../widgets/app_button_styles.dart';
 
 class AccountPage extends StatefulWidget {
   const AccountPage({super.key});
@@ -37,8 +38,9 @@ class _AccountPageState extends State<AccountPage> {
               onPressed: () => Navigator.of(ctx).pop(false),
               child: const Text('取消'),
             ),
-            TextButton(
+            ElevatedButton(
               onPressed: () => Navigator.of(ctx).pop(true),
+              style: AppButtonStyles.dangerFilled(ctx),
               child: const Text('退出登录'),
             ),
           ],
