@@ -78,6 +78,50 @@ class _DerivedQuestionState {
   });
 }
 
+class _SurveyProgressHeader extends SliverPersistentHeaderDelegate {
+  final double progressValue;
+  final int answeredCount;
+  final int total;
+  final Color backgroundColor;
+
+  _SurveyProgressHeader({
+    required this.progressValue,
+    required this.answeredCount,
+    required this.total,
+    required this.backgroundColor,
+  });
+
+  @override
+  double get minExtent => 48;
+
+  @override
+  double get maxExtent => 48;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return Container(
+      color: backgroundColor,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      alignment: Alignment.center,
+      child: Row(
+        children: [
+          Expanded(child: LinearProgressIndicator(value: progressValue)),
+          const SizedBox(width: 12),
+          Text('$answeredCount/$total'),
+        ],
+      ),
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant _SurveyProgressHeader oldDelegate) {
+    return oldDelegate.progressValue != progressValue ||
+        oldDelegate.answeredCount != answeredCount ||
+        oldDelegate.total != total ||
+        oldDelegate.backgroundColor != backgroundColor;
+  }
+}
+
 class _PendingUpload {
   final String path;
   final String mediaType;
@@ -239,9 +283,22 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
   }
 
   _DerivedQuestionState _deriveQuestionState(QuestionDto q) {
-    final incoming = _getIncomingLogics(q)..sort((a, b) => a.order.compareTo(b.order));
-    bool visible = true;
-    bool required = q.required;
+    final incoming = _getIncomingLogics(q)
+      ..sort((a, b) {
+        final orderDiff = a.order.compareTo(b.order);
+        if (orderDiff != 0) return orderDiff;
+        return a.id.compareTo(b.id);
+      });
+    final hasShowRule = incoming.any((lg) => lg.effect == 'show');
+    final hasHideRule = incoming.any((lg) => lg.effect == 'hide');
+    final hasRequireRule = incoming.any((lg) => lg.effect == 'require');
+    final hasOptionalRule = incoming.any((lg) => lg.effect == 'optional');
+
+    bool visible = hasShowRule ? false : true;
+    if (hasHideRule && !hasShowRule) {
+      visible = true;
+    }
+    bool required = (hasRequireRule || hasOptionalRule) ? false : q.required;
 
     for (final lg in incoming) {
       if (!_matchLogic(lg)) continue;
@@ -1623,20 +1680,13 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
             padding: const EdgeInsets.all(16),
             child: CustomScrollView(
               slivers: [
-              SliverToBoxAdapter(
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: LinearProgressIndicator(value: progressValue),
-                        ),
-                        const SizedBox(width: 12),
-                        Text('$answeredCount/$total'),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                  ],
+              SliverPersistentHeader(
+                pinned: true,
+                delegate: _SurveyProgressHeader(
+                  progressValue: progressValue,
+                  answeredCount: answeredCount,
+                  total: total,
+                  backgroundColor: theme.colorScheme.surface,
                 ),
               ),
               SliverList(

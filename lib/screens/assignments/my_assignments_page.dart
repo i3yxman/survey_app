@@ -191,16 +191,10 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> with RouteAware {
       a.storeLatitude,
       a.storeLongitude,
     );
-    final plannedVisit = a.plannedVisitDate;
-    final plannedVisitText = plannedVisit != null
-        ? '计划走访日期：${formatDateZh(plannedVisit)}'
-        : '计划走访日期：未设置';
-
     return Wrap(
       spacing: 8,
       runSpacing: 4,
       children: [
-        InfoChip(icon: Icons.event_outlined, text: plannedVisitText),
         if (storeLine != null)
           InfoChip(icon: Icons.storefront_outlined, text: storeLine),
         if (a.projectStartDate != null && a.projectEndDate != null)
@@ -298,6 +292,12 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> with RouteAware {
                 : filteredItems.length + 1,
             itemBuilder: (context, index) {
               if (index == 0) {
+                final scheme = Theme.of(context).colorScheme;
+                final labelStyle = TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: scheme.onSurface.withOpacity(0.85),
+                );
                 return Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
                   child: Align(
@@ -305,9 +305,9 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> with RouteAware {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           '任务状态筛选',
-                          style: TextStyle(fontSize: 12, color: Colors.black54),
+                          style: labelStyle,
                         ),
                         const SizedBox(height: 6),
                         _statusFilterBar(),
