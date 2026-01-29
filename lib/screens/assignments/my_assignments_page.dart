@@ -98,13 +98,22 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> with RouteAware {
   }
 
   Widget _statusFilterBar() {
+    final theme = Theme.of(context);
+    final selectedColor = theme.colorScheme.primaryContainer;
+    final selectedTextColor = theme.colorScheme.onPrimaryContainer;
+    final defaultTextColor = theme.colorScheme.onSurface;
     return Wrap(
       spacing: 8,
       runSpacing: 8,
       children: [
-        FilterChip(
+        ChoiceChip(
           label: const Text('进行中'),
           selected: _statusInProgress,
+          selectedColor: selectedColor,
+          labelStyle: TextStyle(
+            color: _statusInProgress ? selectedTextColor : defaultTextColor,
+            fontWeight: FontWeight.w600,
+          ),
           onSelected: (value) {
             setState(() {
               _statusInProgress = value;
@@ -114,9 +123,14 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> with RouteAware {
             });
           },
         ),
-        FilterChip(
+        ChoiceChip(
           label: const Text('已完成'),
           selected: _statusCompleted,
+          selectedColor: selectedColor,
+          labelStyle: TextStyle(
+            color: _statusCompleted ? selectedTextColor : defaultTextColor,
+            fontWeight: FontWeight.w600,
+          ),
           onSelected: (value) {
             setState(() {
               _statusCompleted = value;
@@ -126,9 +140,17 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> with RouteAware {
             });
           },
         ),
-        ActionChip(
+        ChoiceChip(
           label: const Text('全选'),
-          onPressed: () {
+          selected: _statusInProgress && _statusCompleted,
+          selectedColor: selectedColor,
+          labelStyle: TextStyle(
+            color: _statusInProgress && _statusCompleted
+                ? selectedTextColor
+                : defaultTextColor,
+            fontWeight: FontWeight.w600,
+          ),
+          onSelected: (_) {
             setState(() {
               _statusInProgress = true;
               _statusCompleted = true;
@@ -294,9 +316,9 @@ class _MyAssignmentsPageState extends State<MyAssignmentsPage> with RouteAware {
               if (index == 0) {
                 final scheme = Theme.of(context).colorScheme;
                 final labelStyle = TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: scheme.onSurface.withOpacity(0.85),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: scheme.onSurface,
                 );
                 return Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),

@@ -259,8 +259,11 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     return null;
   }
 
-  bool _matchLogic(QuestionLogicDto lg) {
-    final fromDraft = _answers[lg.fromQuestionId];
+  bool _matchLogicWithAnswers(
+    QuestionLogicDto lg,
+    Map<int, AnswerDraft> answers,
+  ) {
+    final fromDraft = answers[lg.fromQuestionId];
     if (fromDraft == null) return false;
 
     bool ok = true;
@@ -282,7 +285,10 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     return ok;
   }
 
-  _DerivedQuestionState _deriveQuestionState(QuestionDto q) {
+  _DerivedQuestionState _deriveQuestionStateWithAnswers(
+    QuestionDto q,
+    Map<int, AnswerDraft> answers,
+  ) {
     final incoming = _getIncomingLogics(q)
       ..sort((a, b) {
         final orderDiff = a.order.compareTo(b.order);
@@ -301,7 +307,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     bool required = (hasRequireRule || hasOptionalRule) ? false : q.required;
 
     for (final lg in incoming) {
-      if (!_matchLogic(lg)) continue;
+      if (!_matchLogicWithAnswers(lg, answers)) continue;
       switch (lg.effect) {
         case 'hide':
           visible = false;
@@ -324,6 +330,134 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
     );
   }
 
+  _DerivedQuestionState _deriveQuestionState(QuestionDto q) {
+    return _deriveQuestionStateWithAnswers(q, _answers);
+  }
+
+  Map<int, _DerivedQuestionState> _buildStateMap(
+    Map<int, AnswerDraft> answers,
+  ) {
+    final questionnaire = _questionnaire;
+    if (questionnaire == null) return {};
+    final map = <int, _DerivedQuestionState>{};
+    for (final q in questionnaire.questions) {
+      map[q.id] = _deriveQuestionStateWithAnswers(q, answers);
+    }
+    return map;
+  }
+
+  AnswerDraft _cloneDraft(AnswerDraft draft) {
+    return AnswerDraft(
+      questionId: draft.questionId,
+      textValue: draft.textValue,
+      numberValue: draft.numberValue,
+      dateValue: draft.dateValue,
+      timeValue: draft.timeValue,
+      locationLat: draft.locationLat,
+      locationLng: draft.locationLng,
+      locationAddress: draft.locationAddress,
+      selectedOptionIds: List<int>.from(draft.selectedOptionIds),
+      mediaFileIds: List<int>.from(draft.mediaFileIds),
+      isUploadingMedia: draft.isUploadingMedia,
+      mediaError: draft.mediaError,
+    );
+  }
+
+  void _clearDraftAnswer(QuestionDto q, AnswerDraft draft) {
+    draft.textValue = null;
+    draft.numberValue = null;
+    draft.dateValue = null;
+    draft.timeValue = null;
+    draft.locationLat = null;
+    draft.locationLng = null;
+    draft.locationAddress = null;
+    draft.selectedOptionIds = [];
+    draft.mediaFileIds = [];
+
+    final textController = _textControllers[q.id];
+    if (textController != null) {
+      textController.text = '';
+    }
+    final numberController = _numberControllers[q.id];
+    if (numberController != null) {
+      numberController.text = '';
+    }
+  }
+
+  Future<bool> _confirmClearAnswers(List<QuestionDto> questions) async {
+    if (questions.isEmpty) return true;
+    final names = questions.map((q) => q.text).where((t) => t.isNotEmpty).join('、');
+    if (!mounted) return false;
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('确认清空答案'),
+          content: Text(
+            '本次修改会隐藏并清空以下题目的答案：'
+            '${names.isNotEmpty ? names : '相关题目'}。是否继续？',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('取消'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('确认清空'),
+            ),
+          ],
+        );
+      },
+    );
+    return result == true;
+  }
+
+  Future<void> _applyAnswerChange(
+    QuestionDto q,
+    void Function(AnswerDraft draft) updater,
+  ) async {
+    if (_isReadOnly) return;
+    final questionnaire = _questionnaire;
+    if (questionnaire == null) return;
+    final currentState = _buildStateMap(_answers);
+    final currentDraft = _answers[q.id] ?? AnswerDraft(questionId: q.id);
+    final nextDraft = _cloneDraft(currentDraft);
+    updater(nextDraft);
+    final nextAnswers = Map<int, AnswerDraft>.from(_answers);
+    nextAnswers[q.id] = nextDraft;
+    final nextState = _buildStateMap(nextAnswers);
+    final hiddenQuestions = <QuestionDto>[];
+
+    for (final qu in questionnaire.questions) {
+      final wasVisible = currentState[qu.id]?.visible ?? true;
+      final willVisible = nextState[qu.id]?.visible ?? true;
+      if (wasVisible && !willVisible) {
+        final d = _answers[qu.id];
+        if (d != null && _hasAnswer(qu, d)) {
+          hiddenQuestions.add(qu);
+        }
+      }
+    }
+
+    if (hiddenQuestions.isNotEmpty) {
+      final confirmed = await _confirmClearAnswers(hiddenQuestions);
+      if (!confirmed) return;
+    }
+
+    setState(() {
+      final target = _answers[q.id] ?? AnswerDraft(questionId: q.id);
+      updater(target);
+      _answers[q.id] = target;
+
+      for (final qu in hiddenQuestions) {
+        final d = _answers[qu.id];
+        if (d != null) {
+          _clearDraftAnswer(qu, d);
+        }
+      }
+    });
+  }
   bool _isQuestionVisible(QuestionDto q) {
     return _deriveQuestionState(q).visible;
   }
@@ -1146,8 +1280,8 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                 onChanged: readOnly
                     ? null
                     : (v) {
-                        setState(() {
-                          draft.selectedOptionIds = v == null ? [] : [v];
+                        _applyAnswerChange(q, (d) {
+                          d.selectedOptionIds = v == null ? [] : [v];
                         });
                       },
                 title: Text(opt.text),
@@ -1163,14 +1297,16 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                 onChanged: readOnly
                     ? null
                     : (checked) {
-                        setState(() {
+                        _applyAnswerChange(q, (d) {
+                          final next = List<int>.from(d.selectedOptionIds);
                           if (checked == true) {
-                            if (!draft.selectedOptionIds.contains(opt.id)) {
-                              draft.selectedOptionIds.add(opt.id);
+                            if (!next.contains(opt.id)) {
+                              next.add(opt.id);
                             }
                           } else {
-                            draft.selectedOptionIds.remove(opt.id);
+                            next.remove(opt.id);
                           }
+                          d.selectedOptionIds = next;
                         });
                       },
                 title: Text(opt.text),
@@ -1328,11 +1464,12 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                         },
                       );
                       if (picked == null) return;
-                      setState(() {
-                        draft.dateValue =
-                            '${picked.year.toString().padLeft(4, '0')}-'
-                            '${picked.month.toString().padLeft(2, '0')}-'
-                            '${picked.day.toString().padLeft(2, '0')}';
+                      final nextValue =
+                          '${picked.year.toString().padLeft(4, '0')}-'
+                          '${picked.month.toString().padLeft(2, '0')}-'
+                          '${picked.day.toString().padLeft(2, '0')}';
+                      _applyAnswerChange(q, (d) {
+                        d.dateValue = nextValue;
                       });
                     },
               child: const Text('选择日期'),
@@ -1375,9 +1512,10 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                         },
                       );
                       if (picked == null) return;
-                      setState(() {
-                        draft.timeValue =
-                            '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
+                      final nextValue =
+                          '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
+                      _applyAnswerChange(q, (d) {
+                        d.timeValue = nextValue;
                       });
                     },
               child: const Text('选择时间'),
