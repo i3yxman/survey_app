@@ -533,6 +533,7 @@ class QuestionnaireDto {
   final String? description;
   final int projectId;
   final List<QuestionDto> questions;
+  final List<QuestionPageDto> pages;
 
   QuestionnaireDto({
     required this.id,
@@ -540,6 +541,7 @@ class QuestionnaireDto {
     required this.description,
     required this.projectId,
     required this.questions,
+    required this.pages,
   });
 
   factory QuestionnaireDto.fromJson(Map<String, dynamic> json) {
@@ -547,6 +549,8 @@ class QuestionnaireDto {
     final questions = questionsJson
         .map((e) => QuestionDto.fromJson(e))
         .toList();
+    final pagesJson = json['pages'] as List<dynamic>? ?? [];
+    final pages = pagesJson.map((e) => QuestionPageDto.fromJson(e)).toList();
 
     return QuestionnaireDto(
       id: json['id'] as int,
@@ -554,6 +558,27 @@ class QuestionnaireDto {
       description: json['description'] as String?,
       projectId: json['project'] as int? ?? 0,
       questions: questions,
+      pages: pages,
+    );
+  }
+}
+
+class QuestionPageDto {
+  final int id;
+  final String name;
+  final int order;
+
+  QuestionPageDto({
+    required this.id,
+    required this.name,
+    required this.order,
+  });
+
+  factory QuestionPageDto.fromJson(Map<String, dynamic> json) {
+    return QuestionPageDto(
+      id: json['id'] as int,
+      name: json['name'] as String? ?? '',
+      order: json['order'] as int? ?? 0,
     );
   }
 }
@@ -612,6 +637,7 @@ class QuestionDto {
   final bool visibleToClient;
   final List<int> applicableStoreIds;
   final List<int> applicableGroupIds;
+  final int? pageId;
   final List<OptionDto> options;
   final List<QuestionLogicDto> outgoingLogics;
 
@@ -627,6 +653,7 @@ class QuestionDto {
     required this.visibleToClient,
     required this.applicableStoreIds,
     required this.applicableGroupIds,
+    required this.pageId,
     required this.options,
     required this.outgoingLogics,
   });
@@ -654,6 +681,7 @@ class QuestionDto {
       applicableGroupIds: (json['applicable_group_ids'] as List<dynamic>? ?? [])
           .map((e) => e as int)
           .toList(),
+      pageId: json['page_id'] as int?,
       options: options,
       outgoingLogics: logics,
     );

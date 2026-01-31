@@ -82,12 +82,18 @@ class _SurveyProgressHeader extends SliverPersistentHeaderDelegate {
   final double progressValue;
   final int answeredCount;
   final int total;
+  final String pageName;
+  final int pageAnswered;
+  final int pageTotal;
   final Color backgroundColor;
 
   _SurveyProgressHeader({
     required this.progressValue,
     required this.answeredCount,
     required this.total,
+    required this.pageName,
+    required this.pageAnswered,
+    required this.pageTotal,
     required this.backgroundColor,
   });
 
@@ -99,15 +105,33 @@ class _SurveyProgressHeader extends SliverPersistentHeaderDelegate {
 
   @override
   Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    final theme = Theme.of(context);
     return Container(
       color: backgroundColor,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       alignment: Alignment.center,
       child: Row(
         children: [
+          if (pageName.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Text(
+                pageName,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
           Expanded(child: LinearProgressIndicator(value: progressValue)),
           const SizedBox(width: 12),
           Text('$answeredCount/$total'),
+          if (pageTotal > 0) ...[
+            const SizedBox(width: 10),
+            Text(
+              '本页 $pageAnswered/$pageTotal',
+              style: theme.textTheme.bodySmall,
+            ),
+          ],
         ],
       ),
     );
@@ -118,6 +142,9 @@ class _SurveyProgressHeader extends SliverPersistentHeaderDelegate {
     return oldDelegate.progressValue != progressValue ||
         oldDelegate.answeredCount != answeredCount ||
         oldDelegate.total != total ||
+        oldDelegate.pageName != pageName ||
+        oldDelegate.pageAnswered != pageAnswered ||
+        oldDelegate.pageTotal != pageTotal ||
         oldDelegate.backgroundColor != backgroundColor;
   }
 }
@@ -168,6 +195,8 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
   bool _submitting = false;
 
   bool _shouldRefreshOnPop = false;
+
+  int _currentPageIndex = 0;
 
   DateTime? _extractPlannedVisitDate() {
     final q = _questionnaire;
@@ -606,6 +635,7 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
         _submissionId = latest?.id;
         _submissionStatus = latest?.status;
         _loading = false;
+        _currentPageIndex = 0;
       });
     } catch (e) {
       setState(() {
@@ -1751,11 +1781,72 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
         visibleQuestions.where((item) => item.type != 'title').toList();
     final total = progressQuestions.length;
 
+    const int virtualPageId = 0;
+    final pageMap = <int, List<QuestionDto>>{};
+    for (final qu in visibleQuestions) {
+      final pid = qu.pageId ?? virtualPageId;
+      pageMap.putIfAbsent(pid, () => []);
+      pageMap[pid]!.add(qu);
+    }
+
+    final orderedPages = q.pages
+        .where((p) => p.id != virtualPageId)
+        .toList()
+      ..sort((a, b) => a.order != b.order
+          ? a.order.compareTo(b.order)
+          : a.id.compareTo(b.id));
+
+    final pageIds = <int>[];
+    final pageNames = <int, String>{};
+    for (final p in orderedPages) {
+      final list = pageMap[p.id];
+      if (list == null || list.isEmpty) continue;
+      pageIds.add(p.id);
+      pageNames[p.id] = p.name;
+    }
+    if (pageMap[virtualPageId]?.isNotEmpty == true) {
+      pageIds.add(virtualPageId);
+      pageNames[virtualPageId] = '未分配';
+    }
+    if (pageIds.isEmpty) {
+      pageIds.add(virtualPageId);
+      pageNames[virtualPageId] = '全部';
+      pageMap[virtualPageId] = visibleQuestions;
+    }
+
+    final safePageIndex =
+        _currentPageIndex.clamp(0, pageIds.length - 1) as int;
+    final currentPageId = pageIds[safePageIndex];
+    final currentPageName = pageNames[currentPageId] ?? '';
+    final pageQuestions = pageMap[currentPageId] ?? [];
+    final pageProgressQuestions =
+        pageQuestions.where((item) => item.type != 'title').toList();
+    final pageTotal = pageProgressQuestions.length;
+
     int answeredCount = 0;
     for (final qu in progressQuestions) {
       final d = _answers[qu.id];
       if (d != null && _hasAnswer(qu, d)) {
         answeredCount++;
+      }
+    }
+
+    int pageAnswered = 0;
+    for (final qu in pageProgressQuestions) {
+      final d = _answers[qu.id];
+      if (d != null && _hasAnswer(qu, d)) {
+        pageAnswered++;
+      }
+    }
+
+    bool pageHasMissingRequired = false;
+    for (final qu in pageProgressQuestions) {
+      final derived = _deriveQuestionState(qu);
+      if (!derived.required) continue;
+      final d = _answers[qu.id];
+      if (d == null || !_hasAnswer(qu, d)) {
+        pageHasMissingRequired = true;
+        break;
       }
     }
 
@@ -1824,13 +1915,16 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                   progressValue: progressValue,
                   answeredCount: answeredCount,
                   total: total,
+                  pageName: currentPageName,
+                  pageAnswered: pageAnswered,
+                  pageTotal: pageTotal,
                   backgroundColor: theme.colorScheme.surface,
                 ),
               ),
               SliverList(
                 delegate: SliverChildBuilderDelegate(
                   (context, index) {
-                    final qu = visibleQuestions[index];
+                    final qu = pageQuestions[index];
                     final draft =
                         _answers[qu.id] ?? AnswerDraft(questionId: qu.id);
                     final derived = _deriveQuestionState(qu);
@@ -1901,9 +1995,58 @@ class _SurveyFillPageState extends State<SurveyFillPage> {
                       ),
                     );
                   },
-                  childCount: visibleQuestions.length,
+                  childCount: pageQuestions.length,
                 ),
               ),
+              if (pageIds.length > 1)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 8, bottom: 4),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: safePageIndex == 0
+                                ? null
+                                : () {
+                                    if (pageHasMissingRequired) {
+                                      showSuccessSnackBar(
+                                        context,
+                                        '本页还有必答未完成，可稍后再填',
+                                      );
+                                    }
+                                    setState(() {
+                                      _currentPageIndex =
+                                          (safePageIndex - 1).clamp(0, pageIds.length - 1);
+                                    });
+                                  },
+                            child: const Text('上一页'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: safePageIndex >= pageIds.length - 1
+                                ? null
+                                : () {
+                                    if (pageHasMissingRequired) {
+                                      showSuccessSnackBar(
+                                        context,
+                                        '本页还有必答未完成，可稍后再填',
+                                      );
+                                    }
+                                    setState(() {
+                                      _currentPageIndex =
+                                          (safePageIndex + 1).clamp(0, pageIds.length - 1);
+                                    });
+                                  },
+                            child: const Text('下一页'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               const SliverToBoxAdapter(child: SizedBox(height: 12)),
               if (!_isReadOnly)
                 SliverToBoxAdapter(
